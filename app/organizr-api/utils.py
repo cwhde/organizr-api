@@ -48,15 +48,7 @@ def validate_api_key(api_key, target_user_id=None):
         user_id, user_role = result
         
         # Check permissions
-        has_permission = False
-        if target_user_id is None:
-            # No specific target, just validate the key
-            has_permission = True
-        elif user_role == 'admin':
-            # Admin has permission over everyone
-            has_permission = True
-        elif user_id == target_user_id:
-            # User has permission over their own data
+        if target_user_id is None or user_role == 'admin' or user_id == target_user_id:
             has_permission = True
         
         return user_id, user_role, has_permission

@@ -83,7 +83,7 @@ async def get_user(
     api_key: str = Header(..., alias="X-API-Key")
 ):
     """Get user details"""
-    requester_id, requester_role, has_permission = utils.validate_api_key(api_key, user_id)
+    requester_id, _, has_permission = utils.validate_api_key(api_key, user_id)
     
     if not requester_id or not has_permission:
         raise HTTPException(status_code=403, detail="Access denied")
@@ -121,7 +121,7 @@ async def update_user(
     api_key: str = Header(..., alias="X-API-Key")
 ):
     """Update user details"""
-    requester_id, requester_role, has_permission = utils.validate_api_key(api_key, user_id)
+    requester_id, _, has_permission = utils.validate_api_key(api_key, user_id)
     
     if not requester_id or not has_permission:
         raise HTTPException(status_code=403, detail="Access denied")
@@ -152,7 +152,7 @@ async def delete_user(
 ):
     """Delete user (admin or self only)"""
     # Validate API key and permissions for target user
-    requester_id, requester_role, has_permission = utils.validate_api_key(api_key, user_id)
+    requester_id, _, has_permission = utils.validate_api_key(api_key, user_id)
     if not requester_id or not has_permission:
         raise HTTPException(status_code=403, detail="Access denied")
  
