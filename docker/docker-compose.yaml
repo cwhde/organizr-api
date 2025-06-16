@@ -1,0 +1,42 @@
+version: '3.8'
+services:
+  organizr-api:
+    build:
+      context: ./build
+      dockerfile: ./DOCKERFILE
+    image: hh1de/organizr:latest
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8080:8000"
+    env_file: 
+      - stack.env
+    networks:
+      - organizr-network
+
+  db:
+    image: mysql:8.0
+    restart: always
+    ports:
+      - "3306:3306"
+    env_file:
+      - stack.env
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "--silent"]
+      timeout: 20s
+      retries: 10
+      start_period: 30s
+    networks:
+      - organizr-network
+
+
+networks:
+  organizr-network:
+    driver: bridge
+
+volumes:
+  db_data:
+    driver: local
