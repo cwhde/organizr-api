@@ -1,5 +1,4 @@
 # Database connection management module
-
 import os
 import mysql.connector
 import logging
