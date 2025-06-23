@@ -2,8 +2,8 @@ version: '3.8'
 services:
   organizr-api:
     build:
-      context: ./build
-      dockerfile: ./DOCKERFILE
+      context: ../
+      dockerfile: ./docker/build/Dockerfile
     image: hh1de/organizr:latest
     depends_on:
       db:

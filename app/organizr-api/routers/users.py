@@ -5,11 +5,12 @@ from fastapi import APIRouter, HTTPException, Header
 from typing import Optional, List, Dict, Any
 import database
 import utils
+import schemas
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-@router.post("/", response_model=Dict[str, Any])
+@router.post("/", response_model=schemas.UserCreateResponse)
 async def create_user(
     api_key: str = Header(..., alias="X-API-Key")
 ):
@@ -47,7 +48,7 @@ async def create_user(
         logger.error(f"Error creating user: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@router.get("/", response_model=List[Dict[str, Any]])
+@router.get("/", response_model=List[schemas.User])
 async def list_users(
     api_key: str = Header(..., alias="X-API-Key")
 ):
@@ -77,7 +78,7 @@ async def list_users(
         logger.error(f"Error listing users: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@router.get("/{user_id}", response_model=Dict[str, Any])
+@router.get("/{user_id}", response_model=schemas.UserWithOffset)
 async def get_user(
     user_id: str,
     api_key: str = Header(..., alias="X-API-Key")
@@ -114,7 +115,7 @@ async def get_user(
         logger.error(f"Error getting user: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@router.put("/{user_id}", response_model=Dict[str, Any])
+@router.put("/{user_id}", response_model=schemas.MessageResponse)
 async def update_user(
     user_id: str,
     utc_offset_minutes: int,
@@ -145,7 +146,7 @@ async def update_user(
         logger.error(f"Error updating user: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@router.delete("/{user_id}", response_model=Dict[str, str])
+@router.delete("/{user_id}", response_model=schemas.MessageResponse)
 async def delete_user(
     user_id: str,
     api_key: str = Header(..., alias="X-API-Key")

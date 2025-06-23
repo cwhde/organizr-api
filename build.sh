@@ -13,6 +13,6 @@ IMAGE_NAME=${INPUT_IMAGE:-$DEFAULT_IMAGE}
 
 echo "Building Docker image '${IMAGE_NAME}'..."
 # Build using the Dockerfile in this directory
-docker build -t "${IMAGE_NAME}" -f Dockerfile .
+docker build -t "${IMAGE_NAME}" -f ./docker/build/Dockerfile .
 
 echo "Built ${IMAGE_NAME} successfully."
