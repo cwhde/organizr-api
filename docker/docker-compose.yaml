@@ -40,3 +40,8 @@ networks:
 volumes:
   db_data:
     driver: local
+  # Uncomment and modify the following for production use
+  # driver_opts:
+   #   type: none
+   #   device: /path/on/host/system/data/mysql  # Specify actual host path here
+   #   o: bind
