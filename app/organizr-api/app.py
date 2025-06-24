@@ -4,7 +4,7 @@ import logging
 import setup
 import database
 from fastapi import FastAPI
-from routers import users, calendar
+from routers import users, calendar, apps
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO)
@@ -23,6 +23,7 @@ app = FastAPI(title="Organizr API", version="1.0.0")
 # Include routers
 app.include_router(users.router, prefix="/users", tags=["users"])
 app.include_router(calendar.router, prefix="/calendar", tags=["calendar"])
+app.include_router(apps.router, prefix="/apps", tags=["apps"])
 
 # Health check endpoint
 @app.get("/health")

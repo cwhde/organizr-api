@@ -22,8 +22,8 @@ async def create_user(
     
     try:
         cursor = database.get_cursor()
-        cursor.execute("USE organizr")
-        
+        cursor.execute(f"USE {database.MYSQL_DATABASE}")
+
         # Generate new user credentials
         new_user_id = utils.generate_user_id()
         new_api_key = utils.generate_api_key()
@@ -60,7 +60,7 @@ async def list_users(
     
     try:
         cursor = database.get_cursor()
-        cursor.execute("USE organizr")
+        cursor.execute(f"USE {database.MYSQL_DATABASE}")
         cursor.execute("SELECT id, role, created_at, updated_at FROM users")
         
         users = []
@@ -91,7 +91,7 @@ async def get_user(
     
     try:
         cursor = database.get_cursor()
-        cursor.execute("USE organizr")
+        cursor.execute(f"USE {database.MYSQL_DATABASE}")
         cursor.execute(
             "SELECT id, role, utc_offset_minutes, created_at, updated_at FROM users WHERE id = %s",
             (user_id,)
@@ -129,8 +129,8 @@ async def update_user(
     
     try:
         cursor = database.get_cursor()
-        cursor.execute("USE organizr")
-        
+        cursor.execute(f"USE {database.MYSQL_DATABASE}")
+
         # Update user
         cursor.execute(
             "UPDATE users SET utc_offset_minutes = %s WHERE id = %s",
@@ -159,7 +159,7 @@ async def delete_user(
  
     try:
         cursor = database.get_cursor()
-        cursor.execute("USE organizr")
+        cursor.execute(f"USE {database.MYSQL_DATABASE}")
         # Prevent deletion of admin users
         cursor.execute("SELECT role FROM users WHERE id = %s", (user_id,))
         result = cursor.fetchone()

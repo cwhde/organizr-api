@@ -44,3 +44,31 @@ class CalendarEventCreate(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
+
+
+class App(BaseModel):
+    id: int
+    name: str
+    created_at: datetime
+
+
+class AppCreate(BaseModel):
+    name: str
+
+
+class AppUserLink(BaseModel):
+    id: int
+    app_id: int
+    user_id: str
+    external_id: str
+    created_at: datetime
+
+
+class AppUserLinkCreate(BaseModel):
+    user_id: str
+    external_id: str
+
+
+class TranslateIdResponse(BaseModel):
+    user_id: Optional[str] = None
+    external_id: Optional[str] = None

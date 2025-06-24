@@ -38,7 +38,7 @@ async def create_event(
     # Insert event into database
     try:
         cursor = database.get_cursor()
-        cursor.execute("USE organizr")
+        cursor.execute(f"USE {database.MYSQL_DATABASE}")
 
         # Generate new event with all given parameters, handle optional fields
         tags_json = utils.list_to_json(tags) if tags else None
@@ -115,7 +115,7 @@ async def query_events(
 
     try:
         cursor = database.get_cursor()
-        cursor.execute("USE organizr")
+        cursor.execute(f"USE {database.MYSQL_DATABASE}")
 
         query_conditions = []
         query_params = []
@@ -185,7 +185,7 @@ async def get_event(
 
     try:
         cursor = database.get_cursor()
-        cursor.execute("USE organizr")
+        cursor.execute(f"USE {database.MYSQL_DATABASE}")
 
         cursor.execute("SELECT * FROM calendar_entries WHERE id = %s", (entry_id,))
         event = cursor.fetchone()
@@ -243,7 +243,7 @@ async def update_event(
 
     try:
         cursor = database.get_cursor()
-        cursor.execute("USE organizr")
+        cursor.execute(f"USE {database.MYSQL_DATABASE}")
 
         cursor.execute(f"UPDATE calendar_entries SET {set_clause} WHERE id = %s", query_params + [entry_id])
         database.commit()
@@ -274,7 +274,7 @@ async def delete_event(
 
     try:
         cursor = database.get_cursor()
-        cursor.execute("USE organizr")
+        cursor.execute(f"USE {database.MYSQL_DATABASE}")
 
         cursor.execute("DELETE FROM calendar_entries WHERE id = %s", (entry_id,))
         database.commit()

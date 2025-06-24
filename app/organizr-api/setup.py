@@ -12,17 +12,17 @@ def check_db_is_setup():
     db_cursor.execute("SHOW DATABASES")
     databases = [db[0] for db in db_cursor.fetchall()]
     
-    if "organizr" not in databases:
+    if database.DB_NAME not in databases:
         return False
     
-    db_cursor.execute("USE organizr")
+    db_cursor.execute(f"USE {database.DB_NAME}")
     db_cursor.execute("SHOW TABLES")
     tables = [table[0] for table in db_cursor.fetchall()]
 
     database.get_connection().commit()
     
-    required_tables = ["users", "calendar_entries", "tasks", "notes"]
-    
+    required_tables = ["users", "calendar_entries", "tasks", "notes", "apps", "app_user_links"]
+
     return all(table in tables for table in required_tables)
 
 
@@ -30,14 +30,14 @@ def create_db_and_scheme():
     """Create the organizr database and all necessary tables."""
     db_cursor = database.get_cursor()
 
+    # Create database and select it
+    db_cursor.execute(f"CREATE DATABASE IF NOT EXISTS {database.DB_NAME};")
+    db_cursor.execute(f"USE {database.DB_NAME};")
+    # Create tables
     db_cursor.execute(
         """
-        -- Create database if it doesn't exist
-        CREATE DATABASE IF NOT EXISTS organizr;
-        USE organizr;
-
         -- User table
-        CREATE TABLE users (
+        CREATE TABLE IF NOT EXISTS users (
             id                   CHAR(8)      PRIMARY KEY,
             api_key_hash         CHAR(64)     NOT NULL,
             utc_offset_minutes   SMALLINT     NULL,
@@ -45,9 +45,8 @@ def create_db_and_scheme():
             created_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         );
-
         -- Calendar entries
-        CREATE TABLE calendar_entries (
+        CREATE TABLE IF NOT EXISTS calendar_entries (
             id                   INT          AUTO_INCREMENT PRIMARY KEY,
             user_id              CHAR(8)      NOT NULL,
             title                VARCHAR(255) NOT NULL,
@@ -60,9 +59,8 @@ def create_db_and_scheme():
             updated_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
-
         -- Tasks
-        CREATE TABLE tasks (
+        CREATE TABLE IF NOT EXISTS tasks (
             id                   INT          AUTO_INCREMENT PRIMARY KEY,
             user_id              CHAR(8)      NOT NULL,
             title                VARCHAR(255) NOT NULL,
@@ -75,9 +73,8 @@ def create_db_and_scheme():
             updated_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
-
         -- Notes
-        CREATE TABLE notes (
+        CREATE TABLE IF NOT EXISTS notes (
             id                   INT          AUTO_INCREMENT PRIMARY KEY,
             user_id              CHAR(8)      NOT NULL,
             title                VARCHAR(255) NOT NULL,
@@ -86,6 +83,24 @@ def create_db_and_scheme():
             created_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        -- Apps
+        CREATE TABLE IF NOT EXISTS apps (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(255) UNIQUE NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        -- App User Links
+        CREATE TABLE IF NOT EXISTS app_user_links (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            app_id INT,
+            user_id CHAR(8),
+            external_id VARCHAR(255) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (app_id) REFERENCES apps(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            UNIQUE (app_id, external_id),
+            UNIQUE (app_id, user_id)
         );
         """
     )
@@ -103,7 +118,7 @@ def create_admin_user():
     api_key_hash = utils.hash_api_key(admin_api_key)
 
     # Insert admin user into database
-    db_cursor.execute("USE organizr")
+    db_cursor.execute(f"USE {database.DB_NAME}")
     db_cursor.execute(
         "INSERT INTO users (id, api_key_hash, role) VALUES (%s, %s, 'admin')",
         (admin_id, api_key_hash)
