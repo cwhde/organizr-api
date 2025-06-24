@@ -1,5 +1,5 @@
 # Use a recent slim Python image
-FROM python:3.11-slim
+FROM python:3.9-slim-buster
 
 # Prevent Python from buffering stdout/stderr
 ENV PYTHONUNBUFFERED=1
