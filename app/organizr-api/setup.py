@@ -12,10 +12,10 @@ def check_db_is_setup():
     db_cursor.execute("SHOW DATABASES")
     databases = [db[0] for db in db_cursor.fetchall()]
     
-    if database.DB_NAME not in databases:
+    if database.MYSQL_DATABASE not in databases:
         return False
     
-    db_cursor.execute(f"USE {database.DB_NAME}")
+    db_cursor.execute(f"USE {database.MYSQL_DATABASE}")
     db_cursor.execute("SHOW TABLES")
     tables = [table[0] for table in db_cursor.fetchall()]
 
@@ -31,8 +31,8 @@ def create_db_and_scheme():
     db_cursor = database.get_cursor()
 
     # Create database and select it
-    db_cursor.execute(f"CREATE DATABASE IF NOT EXISTS {database.DB_NAME};")
-    db_cursor.execute(f"USE {database.DB_NAME};")
+    db_cursor.execute(f"CREATE DATABASE IF NOT EXISTS {database.MYSQL_DATABASE};")
+    db_cursor.execute(f"USE {database.MYSQL_DATABASE};")
     # Create tables
     db_cursor.execute(
         """
@@ -118,7 +118,7 @@ def create_admin_user():
     api_key_hash = utils.hash_api_key(admin_api_key)
 
     # Insert admin user into database
-    db_cursor.execute(f"USE {database.DB_NAME}")
+    db_cursor.execute(f"USE {database.MYSQL_DATABASE}")
     db_cursor.execute(
         "INSERT INTO users (id, api_key_hash, role) VALUES (%s, %s, 'admin')",
         (admin_id, api_key_hash)

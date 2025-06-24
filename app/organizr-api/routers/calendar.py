@@ -211,78 +211,122 @@ async def update_event(
     tags: Optional[List[str]] = None,
     api_key: str = Header(..., alias="X-API-Key"),
 ):
-    """Update a calendar entry"""
-    utils.validate_entry_access(api_key, utils.ResourceType.CALENDAR, entry_id)
+    """Update an existing calendar event"""
+    # Validate user has access to this calendar entry
+    requester_id = utils.validate_entry_access(api_key, utils.ResourceType.CALENDAR, entry_id)
 
-    update_fields = {}
-    if title is not None:
-        update_fields["title"] = title
-    if description is not None:
-        update_fields["description"] = description
+    # Validate time formats if provided
+    start_time_parsed = None
+    end_time_parsed = None
 
-    # Validate and update time fields
-    if start_time is not None:
+    if start_time:
         try:
-            update_fields["start_datetime"] = utils.validate_time_format(start_time)
+            start_time_parsed = utils.validate_time_format(start_time)
         except ValueError as e:
+            logger.error(f"Invalid start time format: {e}")
             raise HTTPException(status_code=400, detail=f"Invalid start time format: {e}")
-    if end_time is not None:
+
+    if end_time:
         try:
-            update_fields["end_datetime"] = utils.validate_time_format(end_time)
+            end_time_parsed = utils.validate_time_format(end_time)
         except ValueError as e:
+            logger.error(f"Invalid end time format: {e}")
             raise HTTPException(status_code=400, detail=f"Invalid end time format: {e}")
-
-    if rrule is not None:
-        update_fields["rrule"] = rrule
-
-    if tags is not None:
-        update_fields["tags"] = utils.list_to_json(tags)
-
-    set_clause = ", ".join([f"{key} = %s" for key in update_fields.keys()])
-    query_params = list(update_fields.values())
 
     try:
         cursor = database.get_cursor()
         cursor.execute(f"USE {database.MYSQL_DATABASE}")
 
-        cursor.execute(f"UPDATE calendar_entries SET {set_clause} WHERE id = %s", query_params + [entry_id])
-        database.commit()
-
-        logger.info(f"Updated calendar entry ID {entry_id}")
-
-        # Return the updated event
+        # First get the current entry to know what fields to update
         cursor.execute("SELECT * FROM calendar_entries WHERE id = %s", (entry_id,))
-        event = cursor.fetchone()
+        current_event = cursor.fetchone()
 
-        if not event:
-            raise HTTPException(status_code=404, detail="Event not found after update")
+        if not current_event:
+            logger.error(f"Calendar entry {entry_id} not found")
+            raise HTTPException(status_code=404, detail="Calendar entry not found")
 
-        return event
+        # Prepare update values
+        update_fields = []
+        update_values = []
+
+        if title is not None:
+            update_fields.append("title = %s")
+            update_values.append(title)
+
+        if start_time_parsed is not None:
+            update_fields.append("start_datetime = %s")
+            update_values.append(start_time_parsed)
+
+        if end_time_parsed is not None:
+            update_fields.append("end_datetime = %s")
+            update_values.append(end_time_parsed)
+
+        if description is not None:
+            update_fields.append("description = %s")
+            update_values.append(description)
+
+        if rrule is not None:
+            update_fields.append("rrule = %s")
+            update_values.append(rrule)
+
+        if tags is not None:
+            tags_json = utils.list_to_json(tags)
+            update_fields.append("tags = %s")
+            update_values.append(tags_json)
+
+        if not update_fields:
+            return current_event
+
+        # Build and execute update query
+        update_query = f"UPDATE calendar_entries SET {', '.join(update_fields)} WHERE id = %s"
+        update_values.append(entry_id)
+
+        cursor.execute(update_query, update_values)
+        database.get_connection().commit()
+
+        # Get updated entry
+        cursor.execute("SELECT * FROM calendar_entries WHERE id = %s", (entry_id,))
+        updated_event = cursor.fetchone()
+
+        logger.info(f"Updated calendar entry {entry_id} for user {requester_id}")
+        return updated_event
+
     except Exception as e:
-        database.rollback()
+        database.get_connection().rollback()
         logger.error(f"Failed to update calendar entry {entry_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to update calendar entry {entry_id}: {str(e)}")
-
+        raise HTTPException(status_code=500, detail=f"Failed to update calendar entry: {str(e)}")
 
 @router.delete("/{entry_id}", response_model=schemas.MessageResponse)
 async def delete_event(
     entry_id: int,
     api_key: str = Header(..., alias="X-API-Key"),
 ):
-    """Delete a calendar entry"""
-    utils.validate_entry_access(api_key, utils.ResourceType.CALENDAR, entry_id)
+    """Delete a calendar event"""
+    # Validate user has access to this calendar entry
+    requester_id = utils.validate_entry_access(api_key, utils.ResourceType.CALENDAR, entry_id)
 
     try:
         cursor = database.get_cursor()
         cursor.execute(f"USE {database.MYSQL_DATABASE}")
 
+        # Check if the entry exists
+        cursor.execute("SELECT * FROM calendar_entries WHERE id = %s", (entry_id,))
+        event = cursor.fetchone()
+
+        if not event:
+            logger.error(f"Calendar entry {entry_id} not found for deletion")
+            raise HTTPException(status_code=404, detail="Calendar entry not found")
+
+        # Delete the entry
         cursor.execute("DELETE FROM calendar_entries WHERE id = %s", (entry_id,))
-        database.commit()
+        database.get_connection().commit()
 
-        logger.info(f"Deleted calendar entry ID {entry_id}")
+        logger.info(f"Deleted calendar entry {entry_id} for user {requester_id}")
+        return {"message": "Calendar entry deleted successfully"}
 
-        return {"message": "Event deleted"}
+    except HTTPException:
+        raise
     except Exception as e:
-        database.rollback()
+        database.get_connection().rollback()
         logger.error(f"Failed to delete calendar entry {entry_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to delete calendar entry {entry_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete calendar entry: {str(e)}")

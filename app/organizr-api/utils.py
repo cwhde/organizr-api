@@ -49,7 +49,7 @@ def validate_api_key(api_key, target_user_id=None):
         cursor = database.get_cursor()
         api_key_hash = hash_api_key(api_key)
         
-        cursor.execute(f"USE {database.DB_NAME}")
+        cursor.execute(f"USE {database.MYSQL_DATABASE}")
         cursor.execute("SELECT id, role FROM users WHERE api_key_hash = %s", (api_key_hash,))
         result = cursor.fetchone()
         
@@ -129,7 +129,7 @@ def validate_entry_access(api_key: str, resource_type: ResourceType, resource_id
         raise HTTPException(status_code=500, detail="Invalid resource type specified for validation.")
 
     cursor = database.get_cursor()
-    cursor.execute(f"USE {database.DB_NAME}")
+    cursor.execute(f"USE {database.MYSQL_DATABASE}")
     cursor.execute(f"SELECT user_id FROM {table_name} WHERE id = %s", (resource_id,))
     result = cursor.fetchone()
 

@@ -3,7 +3,9 @@
 import logging
 from fastapi import APIRouter, HTTPException, Header, Query
 from typing import List, Optional
-from .. import database, utils, schemas
+import database
+import utils
+import schemas
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -21,7 +23,7 @@ async def create_app(
 
     try:
         cursor = database.get_cursor()
-        cursor.execute(f"USE {database.DB_NAME}")
+        cursor.execute(f"USE {database.MYSQL_DATABASE}")
 
         cursor.execute(
             "INSERT INTO apps (name) VALUES (%s)",
@@ -50,7 +52,7 @@ async def list_apps(
 
     try:
         cursor = database.get_cursor()
-        cursor.execute(f"USE {database.DB_NAME}")
+        cursor.execute(f"USE {database.MYSQL_DATABASE}")
         cursor.execute("SELECT id, name, created_at FROM apps")
 
         apps = []
@@ -77,7 +79,7 @@ async def update_app(
 
     try:
         cursor = database.get_cursor()
-        cursor.execute(f"USE {database.DB_NAME}")
+        cursor.execute(f"USE {database.MYSQL_DATABASE}")
 
         cursor.execute("UPDATE apps SET name = %s WHERE name = %s", (app_update.name, app_name))
         database.get_connection().commit()
@@ -107,7 +109,7 @@ async def delete_app(
 
     try:
         cursor = database.get_cursor()
-        cursor.execute(f"USE {database.DB_NAME}")
+        cursor.execute(f"USE {database.MYSQL_DATABASE}")
 
         cursor.execute("DELETE FROM apps WHERE name = %s", (app_name,))
         database.get_connection().commit()
@@ -131,23 +133,40 @@ async def create_user_link(
     user_id, user_role, _ = utils.validate_api_key(api_key)
 
     if not user_id or user_role != 'admin':
+        logger.warning(f"Non-admin user {user_id} attempted to create app user link")
         raise HTTPException(status_code=403, detail="Admin access required")
 
     try:
         cursor = database.get_cursor()
-        cursor.execute(f"USE {database.DB_NAME}")
+        cursor.execute(f"USE {database.MYSQL_DATABASE}")
 
+        # Check if app exists
         cursor.execute("SELECT id FROM apps WHERE name = %s", (app_name,))
         app = cursor.fetchone()
         if not app:
+            logger.error(f"App {app_name} not found when creating user link")
             raise HTTPException(status_code=404, detail="App not found")
         app_id = app[0]
 
-        cursor.execute(
-            "INSERT INTO app_user_links (app_id, user_id, external_id) VALUES (%s, %s, %s)",
-            (app_id, link_create.user_id, link_create.external_id)
-        )
-        database.get_connection().commit()
+        # Check if user exists
+        cursor.execute("SELECT id FROM users WHERE id = %s", (link_create.user_id,))
+        user = cursor.fetchone()
+        if not user:
+            logger.error(f"User {link_create.user_id} not found when creating app user link")
+            raise HTTPException(status_code=404, detail=f"User with ID {link_create.user_id} not found")
+
+        try:
+            cursor.execute(
+                "INSERT INTO app_user_links (app_id, user_id, external_id) VALUES (%s, %s, %s)",
+                (app_id, link_create.user_id, link_create.external_id)
+            )
+            database.get_connection().commit()
+        except Exception as e:
+            if "Duplicate entry" in str(e):
+                logger.warning(f"Attempted to create duplicate app user link: {str(e)}")
+                raise HTTPException(status_code=409, detail="A link for this app and user or external ID already exists")
+            else:
+                raise
 
         cursor.execute(
             "SELECT id, app_id, user_id, external_id, created_at FROM app_user_links WHERE app_id = %s AND user_id = %s",
@@ -155,11 +174,15 @@ async def create_user_link(
         )
         new_link = cursor.fetchone()
 
+        logger.info(f"Created user link for app {app_name} (ID: {app_id}) and user {link_create.user_id}")
         return {"id": new_link[0], "app_id": new_link[1], "user_id": new_link[2], "external_id": new_link[3], "created_at": new_link[4]}
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error creating user link: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        database.get_connection().rollback()
+        logger.error(f"Error creating user link: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to create user link: {str(e)}")
 
 @router.get("/{app_name}/users", response_model=List[schemas.AppUserLink])
 async def list_user_links(
@@ -174,7 +197,7 @@ async def list_user_links(
 
     try:
         cursor = database.get_cursor()
-        cursor.execute(f"USE {database.DB_NAME}")
+        cursor.execute(f"USE {database.MYSQL_DATABASE}")
 
         cursor.execute("SELECT id FROM apps WHERE name = %s", (app_name,))
         app = cursor.fetchone()
@@ -211,7 +234,7 @@ async def delete_user_link(
 
     try:
         cursor = database.get_cursor()
-        cursor.execute(f"USE {database.DB_NAME}")
+        cursor.execute(f"USE {database.MYSQL_DATABASE}")
 
         cursor.execute("SELECT id FROM apps WHERE name = %s", (app_name,))
         app = cursor.fetchone()
@@ -255,7 +278,7 @@ async def translate_id(
 
     try:
         cursor = database.get_cursor()
-        cursor.execute(f"USE {database.DB_NAME}")
+        cursor.execute(f"USE {database.MYSQL_DATABASE}")
 
         cursor.execute("SELECT id FROM apps WHERE name = %s", (app_name,))
         app = cursor.fetchone()
