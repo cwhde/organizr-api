@@ -5,6 +5,7 @@ services:
       context: ../
       dockerfile: ./docker/build/Dockerfile
     image: ghcr.io/cwhde/organizr-api:latest
+    container_name: organizr-api
     depends_on:
       db:
         condition: service_healthy
@@ -16,7 +17,8 @@ services:
       - organizr-network
 
   db:
-    image: mysql:8.0
+    image: mysql:8.0-debian
+    container_name: db
     restart: always
     ports:
       - "3306:3306"
