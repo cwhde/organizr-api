@@ -19,6 +19,30 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Export test environment variables
+        run: |
+          echo "MYSQL_DATABASE=${MYSQL_DATABASE}" >> $GITHUB_ENV
+          echo "MYSQL_HOST=${MYSQL_HOST}" >> $GITHUB_ENV
+          echo "MYSQL_PASSWORD=${MYSQL_PASSWORD}" >> $GITHUB_ENV
+          echo "MYSQL_PORT=${MYSQL_PORT}" >> $GITHUB_ENV
+          echo "MYSQL_USER=${MYSQL_USER}" >> $GITHUB_ENV
+        env:
+          MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
+          MYSQL_HOST: ${{ secrets.MYSQL_HOST }}
+          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_PORT: ${{ secrets.MYSQL_PORT }}
+          MYSQL_USER: ${{ secrets.MYSQL_USER }}
+      - name: Run Pytest Unit Tests
+        run: |
+          pytest --cov=app --cov-report=xml:coverage.xml --cov-report=term-missing unit-tests
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v5
         env:

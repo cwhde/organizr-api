@@ -1,0 +1,5 @@
+# Testing dependencies for unit tests
+pytest
+pytest-cov
+pytest-asyncio
+httpx
