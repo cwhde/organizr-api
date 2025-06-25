@@ -186,12 +186,78 @@ class TestDatabaseUtils:
             validate_user_for_action("invalid_key", "tuser2")
         assert exc.value.status_code == 403
 
+    def test_validate_entry_access(self, db_connection):
+        """Test resource entry access validation logic"""
+        conn, cursor = db_connection
+
+        # Create test users
+        create_test_user(cursor, user_id="tuser3", role="user", api_key="user_key_res")
+        create_test_user(cursor, user_id="tuser4", role="user", api_key="user_key_res2")
+        create_test_user(cursor, user_id="tadmin3", role="admin", api_key="admin_key_res")
+
+        # Create test resource entries
+        cursor.execute(f"USE {utils.database.MYSQL_DATABASE}")
+
+        # Create a calendar entry for tuser3
+        cursor.execute(
+            "INSERT INTO calendar_entries (id, user_id, title, start_datetime, end_datetime) VALUES (%s, %s, %s, %s, %s)",
+            (1, "tuser3", "Test Event", "2024-01-01T09:00:00", "2024-01-01T10:00:00")
+        )
+
+        # Create a task for tuser4
+        cursor.execute(
+            "INSERT INTO tasks (id, user_id, title, due_date) VALUES (%s, %s, %s, %s)",
+            (1, "tuser4", "Test Task", "2024-01-02")
+        )
+
+        # Create a note for tuser3
+        cursor.execute(
+            "INSERT INTO notes (id, user_id, title, content) VALUES (%s, %s, %s, %s)",
+            (1, "tuser3", "Test Note", "This is a test note")
+        )
+
+        conn.commit()
+
+        # Test 1: User can access their own calendar entry
+        user_id, role = validate_entry_access("user_key_res", ResourceType.CALENDAR, 1)
+        assert user_id == "tuser3"
+        assert role == "user"
+
+        # Test 2: User cannot access another user's task
+        with pytest.raises(HTTPException) as exc:
+            validate_entry_access("user_key_res", ResourceType.TASK, 1)
+        assert exc.value.status_code == 403
+        assert "Access denied" in exc.value.detail
+
+        # Test 3: Admin can access any user's entry
+        user_id, role = validate_entry_access("admin_key_res", ResourceType.NOTE, 1)
+        assert user_id == "tadmin3"
+        assert role == "admin"
+
+        # Test 4: Invalid resource type
+        with pytest.raises(HTTPException) as exc:
+            validate_entry_access("user_key_res", "invalid_type", 1)
+        assert exc.value.status_code == 500
+        assert "Invalid resource type" in exc.value.detail
+
+        # Test 5: Resource entry not found
+        with pytest.raises(HTTPException) as exc:
+            validate_entry_access("user_key_res", ResourceType.CALENDAR, 999)
+        assert exc.value.status_code == 404
+        assert "entry not found" in exc.value.detail
+
+        # Test 6: Invalid API key
+        with pytest.raises(HTTPException) as exc:
+            validate_entry_access("invalid_key", ResourceType.CALENDAR, 1)
+        assert exc.value.status_code == 403
+        assert "Invalid API key" in exc.value.detail
+
     def test_validate_api_key_exception_handling(self, db_connection):
         """Test that validate_api_key handles database exceptions gracefully"""
         # Force an exception by closing the database connection
         conn, _ = db_connection
         conn.close()
-        
+
         # This should return None, None, False due to exception handling
         user_id, role, perm = validate_api_key("any_key")
         assert user_id is None
