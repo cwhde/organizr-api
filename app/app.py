@@ -1,4 +1,4 @@
-# Main script to run the organizr api, runs startup scripts and starts the different routers
+# Main script to run the organizr api, run startup scripts and starts the different routers
 
 import logging
 import setup
