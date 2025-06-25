@@ -26,7 +26,7 @@ def test_hash_api_key():
     assert len(hashed) == 64
 
 def test_validate_api_key(setup_teardown):
-    user_id, api_key, admin_id, admin_key = setup_teardown
+    user_id, api_key, _, _ = setup_teardown
     uid, role, perm = validate_api_key(api_key)
     assert uid == user_id and role == "user" and perm
     uid, role, perm = validate_api_key("invalid")
@@ -53,7 +53,7 @@ def test_validate_user_for_action(setup_teardown):
         validate_user_for_action("invalid")
 
 def test_validate_entry_access(setup_teardown):
-    user_id, api_key, admin_id, admin_key = setup_teardown
+    user_id, api_key, admin_id, _ = setup_teardown
     entry_id = create_test_calendar_entry(user_id)
     uid, _ = validate_entry_access(api_key, ResourceType.CALENDAR, entry_id)
     assert uid == user_id
