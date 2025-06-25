@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="181ab3f4-d7f3-476a-b727-2272a2d065eb" name="Changes" comment="Add unit tests for FastAPI application and database module">
+      <change afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/unit-tests/modules/routers/test_users.py" beforeDir="false" afterPath="$PROJECT_DIR$/unit-tests/modules/routers/test_users.py" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory"><![CDATA[{
+  "lastFilter": {
+    "state": "OPEN",
+    "assignee": "cwhde"
+  }
+}]]></component>
+  <component name="GithubPullRequestsUISettings"><![CDATA[{
+  "selectedUrlAndAccountId": {
+    "url": "git@github.com:cwhde/organizr-api.git",
+    "accountId": "d1327194-103f-47e6-ab45-b1a08222ad5a"
+  }
+}]]></component>
+  <component name="ProjectColorInfo"><![CDATA[{
+  "associatedIndex": 7
+}]]></component>
+  <component name="ProjectId" id="2yzF9YdLeas16SC0W1hNFHMlEgB" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "SONARLINT_PRECOMMIT_ANALYSIS": "true",
+    "git-widget-placeholder": "main",
+    "node.js.detected.package.eslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "vue.rearranger.settings.migration": "true"
+  }
+}]]></component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-js-predefined-d6986cc7102b-b26f3e71634d-JavaScript-PY-251.26094.46" />
+        <option value="bundled-python-sdk-df1d3dd44c63-36ea0e71a18c-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-251.26094.46" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="TaskManager">
+    <task id="LOCAL-00001" summary="Refactor project structure by renaming and reorganizing application files">
+      <option name="closed" value="true" />
+      <created>1750771728662</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1750771728662</updated>
+    </task>
+    <task id="LOCAL-00002" summary="Update Python Version, try fixing dependency on x86-64-v2">
+      <option name="closed" value="true" />
+      <created>1750772479578</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1750772479578</updated>
+    </task>
+    <task id="LOCAL-00003" summary="Revert python downgrade, fix MySQL GLIBC issues, add compose names">
+      <option name="closed" value="true" />
+      <created>1750777674185</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1750777674185</updated>
+    </task>
+    <task id="LOCAL-00004" summary="Update FastAPI app title and version to reflect new branding and release">
+      <option name="closed" value="true" />
+      <created>1750781581422</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1750781581422</updated>
+    </task>
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="181ab3f4-d7f3-476a-b727-2272a2d065eb" name="Changes" comment="Update FastAPI app title and version to reflect new branding and release" />
+      <created>1750829344871</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1750829344871</updated>
+      <workItem from="1750829345570" duration="7827000" />
+    </task>
+    <task id="LOCAL-00005" summary="Add unit tests for FastAPI application and database module">
+      <option name="closed" value="true" />
+      <created>1750834992482</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1750834992482</updated>
+    </task>
+    <option name="localTasksCounter" value="6" />
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="Refactor project structure by renaming and reorganizing application files" />
+    <MESSAGE value="Update Python Version, try fixing dependency on x86-64-v2" />
+    <MESSAGE value="Revert python downgrade, fix MySQL GLIBC issues, add compose names" />
+    <MESSAGE value="Update FastAPI app title and version to reflect new branding and release" />
+    <MESSAGE value="Add unit tests for FastAPI application and database module" />
+    <option name="LAST_COMMIT_MESSAGE" value="Add unit tests for FastAPI application and database module" />
+  </component>
+</project>

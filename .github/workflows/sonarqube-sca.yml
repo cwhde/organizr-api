@@ -43,7 +43,7 @@ jobs:
           MYSQL_USER: ${{ secrets.MYSQL_USER }}
       - name: Run Pytest Unit Tests
         run: |
-          pytest --cov=app --cov-report=xml:coverage.xml --cov-report=term-missing unit-tests
+          python3 -m pytest
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v5
         env:
