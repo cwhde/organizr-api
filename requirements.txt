@@ -6,3 +6,5 @@ passlib
 python-jose[cryptography]
 bcrypt
 python-dateutil
+icalendar
+recurring-ical-events
