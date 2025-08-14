@@ -4,7 +4,11 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="181ab3f4-d7f3-476a-b727-2272a2d065eb" name="Changes" comment="Add unit tests for FastAPI application and database module" />
+    <list default="true" id="181ab3f4-d7f3-476a-b727-2272a2d065eb" name="Changes" comment="Add unit tests for user management and utility functions">
+      <change beforePath="$PROJECT_DIR$/.idea/organizr-api.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/organizr-api.iml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/routers/calendar.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/routers/calendar.py" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -13,21 +17,21 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
-  <component name="GitHubPullRequestSearchHistory"><![CDATA[{
-  "lastFilter": {
-    "state": "OPEN",
-    "assignee": "cwhde"
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;cwhde&quot;
   }
-}]]></component>
-  <component name="GithubPullRequestsUISettings"><![CDATA[{
-  "selectedUrlAndAccountId": {
-    "url": "git@github.com:cwhde/organizr-api.git",
-    "accountId": "d1327194-103f-47e6-ab45-b1a08222ad5a"
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;git@github.com:cwhde/organizr-api.git&quot;,
+    &quot;accountId&quot;: &quot;d1327194-103f-47e6-ab45-b1a08222ad5a&quot;
   }
-}]]></component>
-  <component name="ProjectColorInfo"><![CDATA[{
-  "associatedIndex": 7
-}]]></component>
+}</component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 7
+}</component>
   <component name="ProjectId" id="2yzF9YdLeas16SC0W1hNFHMlEgB" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
@@ -35,6 +39,7 @@
   </component>
   <component name="PropertiesComponent"><![CDATA[{
   "keyToString": {
+    "ASKED_SHARE_PROJECT_CONFIGURATION_FILES": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.git.unshallow": "true",
     "SONARLINT_PRECOMMIT_ANALYSIS": "true",
@@ -94,6 +99,7 @@
       <option name="presentableId" value="Default" />
       <updated>1750829344871</updated>
       <workItem from="1750829345570" duration="8480000" />
+      <workItem from="1755155587510" duration="3909000" />
     </task>
     <task id="LOCAL-00005" summary="Add unit tests for FastAPI application and database module">
       <option name="closed" value="true" />
@@ -103,7 +109,15 @@
       <option name="project" value="LOCAL" />
       <updated>1750834992482</updated>
     </task>
-    <option name="localTasksCounter" value="6" />
+    <task id="LOCAL-00006" summary="Add unit tests for user management and utility functions">
+      <option name="closed" value="true" />
+      <created>1755155692787</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1755155692787</updated>
+    </task>
+    <option name="localTasksCounter" value="7" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -115,6 +129,7 @@
     <MESSAGE value="Revert python downgrade, fix MySQL GLIBC issues, add compose names" />
     <MESSAGE value="Update FastAPI app title and version to reflect new branding and release" />
     <MESSAGE value="Add unit tests for FastAPI application and database module" />
-    <option name="LAST_COMMIT_MESSAGE" value="Add unit tests for FastAPI application and database module" />
+    <MESSAGE value="Add unit tests for user management and utility functions" />
+    <option name="LAST_COMMIT_MESSAGE" value="Add unit tests for user management and utility functions" />
   </component>
 </project>

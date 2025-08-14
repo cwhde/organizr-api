@@ -97,78 +97,62 @@ async def query_events(
         api_key: str = Header(..., alias="X-API-Key"),
 ):
     """Query calendar events of a user by text, tags, and/or time range"""
-    if match_mode not in ["and", "or"]:
-        raise HTTPException(status_code=400, detail="Invalid match_mode. Must be 'and' or 'or'.")
 
-    target_user_id = utils.validate_user_for_action(api_key, for_user)
-
+    # Validate user has access to this calendar
+    requester_id = utils.validate_user_for_action(api_key, for_user)
+    
     if not any([search_text, tags, start_after, end_before]):
-        raise HTTPException(status_code=400, detail="At least one search parameter (search_text, tags, start_after, end_before) must be provided.")
-
-    time_range_specified = start_after is not None or end_before is not None
-
-    start_date = utils.validate_time_format(start_after) if start_after else datetime.datetime.min
-    end_date = utils.validate_time_format(end_before) if end_before else datetime.datetime.max
-
-    if not start_date or not end_date:
-        raise HTTPException(status_code=400, detail="Invalid time format for start_after or end_before.")
+        raise HTTPException(status_code=400, detail="At least one query filter must be provided.")
 
     try:
         cursor = database.get_cursor()
         cursor.execute(f"USE {database.MYSQL_DATABASE}")
 
-        query_conditions = []
-        query_params = []
+        # Build query for non-recurring events
+        query_parts = ["(rrule IS NULL OR rrule = '')", "user_id = %s"]
+        query_params = [requester_id]
 
+        filter_conditions = []
+        
         if search_text:
-            text_condition = "(title LIKE %s OR description LIKE %s)"
-            query_conditions.append(text_condition)
+            filter_conditions.append("(title LIKE %s OR description LIKE %s)")
             query_params.extend([f"%{search_text}%", f"%{search_text}%"])
 
         if tags:
-            tags_conditions = [f"JSON_CONTAINS(tags, '{{\"{tag}\": true}}')" for tag in tags]
-            if match_mode == 'and':
-                query_conditions.append(f"({' AND '.join(tags_conditions)})")
+            if match_mode.lower() == "and":
+                for tag in tags:
+                    filter_conditions.append("JSON_CONTAINS(tags, %s)")
+                    query_params.append(f'"{tag}"')
+            else: # or
+                tag_conditions = []
+                for tag in tags:
+                    tag_conditions.append("JSON_CONTAINS(tags, %s)")
+                    query_params.append(f'"{tag}"')
+                filter_conditions.append(f"({' OR '.join(tag_conditions)})")
+
+        if filter_conditions:
+            if match_mode.lower() == "and":
+                query_parts.append(f"({' AND '.join(filter_conditions)})")
+            elif match_mode.lower() == "or":
+                query_parts.append(f"({' OR '.join(filter_conditions)})")
             else:
-                query_conditions.append(f"({' OR '.join(tags_conditions)})")
+                raise HTTPException(status_code=400, detail="Invalid match_mode. Use 'and' or 'or'.")
 
+        if start_after or end_before:
+            start_time = utils.validate_time_format(start_after) if start_after else datetime.datetime.min
+            end_time = utils.validate_time_format(end_before) if end_before else datetime.datetime.max
+            
+            query_parts.append("start_datetime <= %s AND COALESCE(end_datetime, start_datetime) >= %s")
+            query_params.extend([end_time, start_time])
 
-        base_query = "SELECT * FROM calendar_entries WHERE user_id = %s"
-        query_params.insert(0, target_user_id)
+        sql_query = f"SELECT * FROM calendar_entries WHERE {' AND '.join(query_parts)}"
+        
+        logger.info(f"Querying calendar for user {requester_id}")
+        cursor.execute(sql_query, tuple(query_params))
+        results = cursor.fetchall()
 
-        # First, get all events matching the non-time-based criteria
-        non_time_query = base_query
-        if query_conditions:
-            non_time_query += f" AND ({' ' + match_mode.upper() + ' ' .join(query_conditions)})"
-
-        cursor.execute(non_time_query, query_params)
-        all_matching_events = cursor.fetchall()
-
-        # Separate events with and without rrule
-        events_with_rrule = [event for event in all_matching_events if event['rrule']]
-        events_without_rrule = [event for event in all_matching_events if not event['rrule']]
-
-        final_results = []
-
-        # Handle events without rrule
-        for event in events_without_rrule:
-            if start_date <= event['start_datetime'] <= end_date or start_date <= event['end_datetime'] <= end_date:
-                final_results.append(event)
-
-        # Handle events with rrule
-        if time_range_specified:
-            if match_mode == 'and':
-                if events_with_rrule:
-                     raise HTTPException(status_code=400, detail="Cannot query events with rrule in 'and' mode with a specific time range.")
-            else: # OR mode
-                # In OR mode, if a time range is specified, we cannot yet resolve rrules.
-                utils.handle_rrule_query(events_with_rrule, start_date, end_date)
-        else:
-            # If no time range is specified, we can return all events with rrule that match other criteria
-            final_results.extend(events_with_rrule)
-
-
-        return final_results
+        logger.info(f"Found {len(results)} events for user {requester_id}")
+        return results
 
     except Exception as e:
         logger.error(f"Failed to query calendar entries: {str(e)}")
