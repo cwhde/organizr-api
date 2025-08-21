@@ -94,23 +94,16 @@ async def query_events(
         start_after: Optional[str] = None,
         end_before: Optional[str] = None,
         match_mode: Optional[str] = "and",
-        for_user: Optional[str] = None,  # Let admin query events for other users
+        for_user: Optional[str] = None,
         api_key: str = Header(..., alias="X-API-Key"),
 ):
-    """Query calendar events of a user by text, tags, and/or time range
-    Parts:
-    1) Non-recurring via SQL
-    2) Recurring base rows via SQL when no time window
-    3) Recurring occurrences via utils.handle_rrule_query when a time window is provided
-    """
-
-    # Validate user has access to this calendar
+    """Query calendar events by text, tags, and/or time range with configurable match mode"""
     requester_id = utils.validate_user_for_action(api_key, for_user)
 
     if not any([search_text, tags, start_after, end_before]):
         raise HTTPException(status_code=400, detail="At least one query filter must be provided.")
 
-    # Normalize time window; defaults to min/max to avoid errors
+    # Parse time window
     start_dt = datetime.datetime.min
     end_dt = datetime.datetime.max
     if start_after:
@@ -121,134 +114,105 @@ async def query_events(
         end_dt = utils.validate_time_format(end_before)
         if end_dt is None:
             raise HTTPException(status_code=400, detail="Invalid end_before time format")
+    
     has_time_window = bool(start_after or end_before)
-
-    def build_text_tags_filters() -> (List[str], List[Any]):
-        conds: List[str] = []
-        params: List[Any] = []
-        if search_text:
-            conds.append("(title LIKE %s OR description LIKE %s)")
-            like = f"%{search_text}%"
-            params.extend([like, like])
-        if tags:
-            mode = (match_mode or "and").lower()
-            if mode not in ("and", "or"):
-                raise HTTPException(status_code=400, detail="Invalid match_mode. Use 'and' or 'or'.")
-            tag_conds = []
-            for tag in tags:
-                tag_conds.append("JSON_CONTAINS(tags, %s)")
-                params.append(f'"{tag}"')
-            if tag_conds:
-                if mode == "and":
-                    conds.append(f"({' AND '.join(tag_conds)})")
-                else:
-                    conds.append(f"({' OR '.join(tag_conds)})")
-        return conds, params
-
-    def row_to_dict(columns: List[str], row: tuple) -> Dict[str, Any]:
-        item = {col: row[i] for i, col in enumerate(columns)}
-        # Normalize JSON fields
-        raw_tags = item.get("tags")
-        if isinstance(raw_tags, str):
-            try:
-                item["tags"] = json.loads(raw_tags)
-            except Exception:
-                item["tags"] = None
-        # Ensure datetime fields exist
-        return item
-
-    def post_filter(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        mode = (match_mode or "and").lower()
-        def match_item(it: Dict[str, Any]) -> bool:
-            if search_text:
-                title = (it.get("title") or "")
-                desc = (it.get("description") or "")
-                if (search_text.lower() not in title.lower()) and (search_text.lower() not in desc.lower()):
-                    return False
-            if tags:
-                ev_tags = it.get("tags") or []
-                if not isinstance(ev_tags, list):
-                    try:
-                        ev_tags = json.loads(ev_tags) if ev_tags else []
-                    except Exception:
-                        ev_tags = []
-                if mode == "and":
-                    if not all(t in ev_tags for t in tags):
-                        return False
-                else:
-                    if not any(t in ev_tags for t in tags):
-                        return False
-            return True
-        return [it for it in items if match_item(it)]
 
     try:
         cursor = database.get_cursor()
         cursor.execute(f"USE {database.MYSQL_DATABASE}")
 
-        # Common text/tags filters
-        tt_conds, tt_params = build_text_tags_filters()
+        results = []
 
-        results: List[Dict[str, Any]] = []
-
-        # Part 1: Non-recurring events via SQL (overlap with window)
-        base_conds = ["user_id = %s", "(rrule IS NULL OR rrule = '')",
-                      "start_datetime <= %s AND COALESCE(end_datetime, start_datetime) >= %s"]
-        base_params: List[Any] = [requester_id, end_dt, start_dt]
-        if tt_conds:
+        # Non-recurring events via SQL
+        base_conds = ["user_id = %s", "(rrule IS NULL OR rrule = '')", 
+                     "start_datetime <= %s AND COALESCE(end_datetime, start_datetime) >= %s"]
+        base_params = [requester_id, end_dt, start_dt]
+        
+        # For AND mode, add all filters to SQL; for OR mode, query all and filter after
+        if match_mode.lower() == "and":
+            tt_conds, tt_params = utils.build_query_filters(search_text, tags)
             base_conds.extend(tt_conds)
             base_params.extend(tt_params)
-        sql_non_rrule = f"SELECT id, user_id, title, description, start_datetime, end_datetime, rrule, tags FROM calendar_entries WHERE {' AND '.join(base_conds)}"
-        cursor.execute(sql_non_rrule, tuple(base_params))
-        cols_non = [d[0] for d in cursor.description]
-        rows_non = cursor.fetchall()
-        non_rrule_items = [row_to_dict(cols_non, r) for r in rows_non]
-        results.extend(non_rrule_items)
 
-        # Recurring handling
+        sql = f"SELECT id, user_id, title, description, start_datetime, end_datetime, rrule, tags FROM calendar_entries WHERE {' AND '.join(base_conds)}"
+        cursor.execute(sql, tuple(base_params))
+        
+        rows = cursor.fetchall()
+        cols = [d[0] for d in cursor.description]
+        items = []
+        for row in rows:
+            item = {col: row[i] for i, col in enumerate(cols)}
+            if isinstance(item.get("tags"), str):
+                try:
+                    item["tags"] = json.loads(item["tags"])
+                except (json.JSONDecodeError, TypeError):
+                    item["tags"] = []
+            items.append(item)
+        
+        if match_mode.lower() == "or":
+            items = utils.apply_match_mode_filter(items, search_text, tags, None, match_mode)
+        
+        results.extend(items)
+
+        # Recurring events
         if has_time_window:
-            # Part 3: Expand recurring occurrences within [start_dt, end_dt)
-            recur_conds = ["user_id = %s", "(rrule IS NOT NULL AND rrule <> '')", "start_datetime <= %s"]
-            recur_params: List[Any] = [requester_id, end_dt]
-            if tt_conds:
-                recur_conds.extend(tt_conds)
-                recur_params.extend(tt_params)
-            sql_recur = f"SELECT id, user_id, title, description, start_datetime, end_datetime, rrule, tags FROM calendar_entries WHERE {' AND '.join(recur_conds)}"
-            cursor.execute(sql_recur, tuple(recur_params))
-            cols_rec = [d[0] for d in cursor.description]
-            rows_rec = cursor.fetchall()
-            # Convert DB rows to dicts with proper types for utils
-            recur_events: List[Dict[str, Any]] = []
-            for r in rows_rec:
-                ev = row_to_dict(cols_rec, r)
-                # Ensure tags is a list (not JSON string)
+            # Get recurring events and expand
+            rec_conds = ["user_id = %s", "(rrule IS NOT NULL AND rrule <> '')", "start_datetime <= %s"]
+            rec_params = [requester_id, end_dt]
+            
+            if match_mode.lower() == "and":
+                rec_conds.extend(tt_conds)
+                rec_params.extend(tt_params)
+
+            sql_rec = f"SELECT id, user_id, title, description, start_datetime, end_datetime, rrule, tags FROM calendar_entries WHERE {' AND '.join(rec_conds)}"
+            cursor.execute(sql_rec, tuple(rec_params))
+            
+            rec_rows = cursor.fetchall()
+            rec_events = []
+            for row in rec_rows:
+                ev = {col: row[i] for i, col in enumerate(cols)}
                 if isinstance(ev.get("tags"), str):
                     try:
-                        ev["tags"] = json.loads(ev["tags"]) if ev["tags"] else None
-                    except Exception:
-                        ev["tags"] = None
-                recur_events.append(ev)
-            # Expand occurrences
-            occurrences = utils.handle_rrule_query(recur_events, start_dt, end_dt)
-            # Post-filter for text/tags to be safe
-            occurrences = post_filter(occurrences)
+                        ev["tags"] = json.loads(ev["tags"])
+                    except (json.JSONDecodeError, TypeError):
+                        ev["tags"] = []
+                rec_events.append(ev)
+            
+            occurrences = utils.handle_rrule_query(rec_events, start_dt, end_dt)
+            
+            if match_mode.lower() == "or":
+                occurrences = utils.apply_match_mode_filter(occurrences, search_text, tags, None, match_mode)
+            
             results.extend(occurrences)
         else:
-            # Part 2: No time window -> return base recurring rows via SQL (like part 1 conditions but across all time)
-            recur_conds = ["user_id = %s", "(rrule IS NOT NULL AND rrule <> '')"]
-            recur_params: List[Any] = [requester_id]
-            if tt_conds:
-                recur_conds.extend(tt_conds)
-                recur_params.extend(tt_params)
-            sql_recur_base = f"SELECT id, user_id, title, description, start_datetime, end_datetime, rrule, tags FROM calendar_entries WHERE {' AND '.join(recur_conds)}"
-            cursor.execute(sql_recur_base, tuple(recur_params))
-            cols_rec_base = [d[0] for d in cursor.description]
-            rows_rec_base = cursor.fetchall()
-            recur_base_items = [row_to_dict(cols_rec_base, r) for r in rows_rec_base]
-            results.extend(recur_base_items)
+            # No time window - return base recurring rows
+            rec_conds = ["user_id = %s", "(rrule IS NOT NULL AND rrule <> '')"]
+            rec_params = [requester_id]
+            
+            if match_mode.lower() == "and":
+                rec_conds.extend(tt_conds)
+                rec_params.extend(tt_params)
 
-        # Sort combined results for readability
+            sql_rec = f"SELECT id, user_id, title, description, start_datetime, end_datetime, rrule, tags FROM calendar_entries WHERE {' AND '.join(rec_conds)}"
+            cursor.execute(sql_rec, tuple(rec_params))
+            
+            rec_rows = cursor.fetchall()
+            rec_items = []
+            for row in rec_rows:
+                item = {col: row[i] for i, col in enumerate(cols)}
+                if isinstance(item.get("tags"), str):
+                    try:
+                        item["tags"] = json.loads(item["tags"])
+                    except (json.JSONDecodeError, TypeError):
+                        item["tags"] = []
+                rec_items.append(item)
+            
+            if match_mode.lower() == "or":
+                rec_items = utils.apply_match_mode_filter(rec_items, search_text, tags, None, match_mode)
+            
+            results.extend(rec_items)
+
         results.sort(key=lambda x: (x.get("start_datetime") or datetime.datetime.min, x.get("id") or 0))
-
         logger.info(f"Found {len(results)} events for user {requester_id}")
         return results
 

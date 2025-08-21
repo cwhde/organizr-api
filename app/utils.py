@@ -302,6 +302,65 @@ def handle_rrule_query(events_with_rrule, start_date, end_date):
     results.sort(key=lambda x: (x.get("start_datetime") or datetime.datetime.min, x.get("id") or 0))
     return results
 
+def build_query_filters(search_text=None, tags=None, status=None, match_mode="and"):
+    """Build SQL conditions and params for common query filters"""
+    conds, params = [], []
+    
+    if search_text:
+        conds.append("(title LIKE %s OR description LIKE %s)")
+        like = f"%{search_text}%"
+        params.extend([like, like])
+    
+    if status is not None:
+        conds.append("status = %s")
+        params.append(status.value if hasattr(status, 'value') else status)
+    
+    if tags:
+        tag_conds = []
+        for t in tags:
+            tag_conds.append("JSON_CONTAINS(tags, JSON_QUOTE(%s), '$')")
+            params.append(t)
+        joiner = " AND " if match_mode.lower() == "and" else " OR "
+        conds.append(f"({joiner.join(tag_conds)})")
+    
+    return conds, params
+
+def apply_match_mode_filter(items, search_text=None, tags=None, status=None, match_mode="and"):
+    """Apply match_mode filtering to a list of items"""
+    if not any([search_text, tags, status]):
+        return items
+    
+    mode = match_mode.lower()
+    
+    def matches_item(item):
+        matches = []
+        
+        if search_text:
+            title = (item.get("title") or "").lower()
+            desc = (item.get("description") or "").lower()
+            matches.append(search_text.lower() in title or search_text.lower() in desc)
+        
+        if status is not None:
+            item_status = item.get("status")
+            status_val = status.value if hasattr(status, 'value') else status
+            matches.append(item_status == status_val)
+        
+        if tags:
+            item_tags = item.get("tags") or []
+            if isinstance(item_tags, str):
+                try:
+                    item_tags = json.loads(item_tags)
+                except (json.JSONDecodeError, TypeError):
+                    item_tags = []
+            if mode == "and":
+                matches.append(all(t in item_tags for t in tags))
+            else:
+                matches.append(any(t in item_tags for t in tags))
+        
+        return all(matches) if mode == "and" else any(matches)
+    
+    return [item for item in items if matches_item(item)]
+
 def list_to_json(lst):
     """
     Convert a list to a JSON string
