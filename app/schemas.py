@@ -1,6 +1,14 @@
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
+from enum import Enum
+
+
+class TaskStatus(str, Enum):
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
 
 
 class User(BaseModel):
@@ -38,6 +46,26 @@ class CalendarEventCreate(BaseModel):
     description: Optional[str] = None
     start_datetime: str
     end_datetime: Optional[str] = None
+    rrule: Optional[str] = None
+    tags: Optional[List[str]] = []
+
+class Task(BaseModel):
+    id: int
+    user_id: str
+    title: str
+    description: Optional[str] = None
+    status: TaskStatus = TaskStatus.PENDING
+    due_date: Optional[datetime] = None
+    rrule: Optional[str] = None
+    tags: Optional[List[str]] = []
+
+
+class TaskCreate(BaseModel):
+    user_id: str
+    title: str
+    description: Optional[str] = None
+    status: Optional[TaskStatus] = TaskStatus.PENDING
+    due_date: Optional[str] = None
     rrule: Optional[str] = None
     tags: Optional[List[str]] = []
 
