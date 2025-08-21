@@ -100,3 +100,25 @@ class AppUserLinkCreate(BaseModel):
 class TranslateIdResponse(BaseModel):
     user_id: Optional[str] = None
     external_id: Optional[str] = None
+
+
+class Note(BaseModel):
+    id: int
+    user_id: str
+    title: str
+    content: str
+    tags: Optional[List[str]] = []
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class NoteCreate(BaseModel):
+    title: str
+    content: str
+    tags: Optional[List[str]] = []
+
+
+class NoteUpdate(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+    tags: Optional[List[str]] = []
