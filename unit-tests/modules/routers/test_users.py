@@ -9,9 +9,13 @@ from app import app
 import database
 from fastapi.testclient import TestClient
 
+@pytest.fixture(scope="module", autouse=True)
+def setup_module():
+    """Setup the database for the module."""
+    unit_test_utils.clean_tables()
+
 def test_create_user():
     # Create user, check if the data from the response is correct (in db and works on other endpoints)
-    unit_test_utils.clean_tables()
     client = TestClient(app)
     admin_api_key = unit_test_utils.manual_admin_key_override()
     response = client.post(
@@ -39,7 +43,6 @@ def test_create_user():
 
 def test_list_users():
     # Create a few extra users
-    unit_test_utils.clean_tables()
     client = TestClient(app)
     admin_api_key = unit_test_utils.manual_admin_key_override()
     for _ in range(3):
@@ -78,7 +81,6 @@ def test_list_users():
 
 def test_user_actions():
     # Test get, put and delete user actions
-    unit_test_utils.clean_tables()
     client = TestClient(app)
     admin_api_key = unit_test_utils.manual_admin_key_override()
     # Create a user

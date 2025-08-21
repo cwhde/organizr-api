@@ -6,6 +6,12 @@ from fastapi.testclient import TestClient
 from unittest.mock import patch
 import app
 
+@pytest.fixture(scope="module", autouse=True)
+def setup_module():
+    """Setup the database for the module."""
+    import unit_test_utils
+    unit_test_utils.clean_tables()
+
 def test_app_initialization():
     # Test app is created with correct config
     assert app.app.title == "Organizr-API"

@@ -26,7 +26,6 @@ def get_connection():
                 user=MYSQL_USER,
                 password=MYSQL_PASSWORD,
                 port=MYSQL_PORT,
-                database=MYSQL_DATABASE,
                 autocommit=False
             )
             logger.info("Database connection established")

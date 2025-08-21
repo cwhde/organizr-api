@@ -5,6 +5,12 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'app'))
 import database
 import mysql.connector
 from unittest.mock import patch
+import unit_test_utils
+
+@pytest.fixture(scope="module", autouse=True)
+def setup_module():
+    """Setup the database for the module."""
+    unit_test_utils.clean_tables()
 
 def test_get_connection():
     conn = database.get_connection()
