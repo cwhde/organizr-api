@@ -12,12 +12,15 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends curl && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
-COPY requirements.txt .
+# Copy app and install Python dependencies
+COPY /app/requirements .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY app/ .
+# Remove unnecessary file
+RUN rm -rf requirements.txt
+
+# Copy app
+COPY /app .
 
 # Expose application port
 EXPOSE 8000

@@ -3,7 +3,7 @@ services:
   organizr-api:
     build:
       context: ../
-      dockerfile: ./docker/build/Dockerfile
+      dockerfile: ./docker/build/app/Dockerfile
     image: ghcr.io/cwhde/organizr-api:latest
     container_name: organizr-api
     depends_on:
