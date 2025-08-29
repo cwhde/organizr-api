@@ -373,6 +373,27 @@ def list_to_json(lst):
     """
     return json.dumps(lst) if lst else None
 
+def json_to_list(json_str: Optional[str]) -> Optional[List[Any]]:
+    """
+    Convert a JSON string to a list.
+
+    Args:
+        json_str: JSON string to convert.
+
+    Returns:
+        List or None: Parsed list if valid, None otherwise.
+    """
+    if not json_str:
+        return None
+    try:
+        data = json.loads(json_str)
+        if isinstance(data, list):
+            return data
+        return None
+    except (json.JSONDecodeError, TypeError):
+        logger.warning(f"Could not decode JSON string to list: {json_str}")
+        return None
+
 def validate_time_format(time_str):
     """
     Validate time format (ISO 8601) and return as datetime object
