@@ -1,5 +1,4 @@
-telebot
+py-telegram-bot-api
 openai
 tiktoken
-json
 requests

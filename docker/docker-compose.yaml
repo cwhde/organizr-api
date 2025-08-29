@@ -6,12 +6,34 @@ services:
       dockerfile: ./docker/build/app/Dockerfile
     image: ghcr.io/cwhde/organizr-api:latest
     container_name: organizr-api
+    restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
     ports:
       - "8080:8000"
     env_file: 
+      - stack.env
+    networks:
+      - organizr-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  organizr-bot:
+    build:
+      context: ../
+      dockerfile: ./docker/build/bot/Dockerfile
+    image: ghcr.io/cwhde/organizr-bot:latest
+    container_name: organizr-bot
+    restart: unless-stopped
+    depends_on:
+      organizr-api:
+        condition: service_healthy
+    env_file:
       - stack.env
     networks:
       - organizr-network
@@ -34,7 +56,6 @@ services:
     networks:
       - organizr-network
 
-
 networks:
   organizr-network:
     driver: bridge
@@ -42,8 +63,3 @@ networks:
 volumes:
   db_data:
     driver: local
-  # Uncomment and modify the following for production use
-  # driver_opts:
-   #   type: none
-   #   device: /path/on/host/system/data/mysql  # Specify actual host path here
-   #   o: bind
