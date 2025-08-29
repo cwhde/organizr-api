@@ -67,15 +67,50 @@ def message_entrypoint(message):
         if not api.check_user_exists_in_app(user_id_str):
             logger.info(f"User {user_id_str} not found in API. Creating new user and link.")
             api.create_and_link_user(user_id_str)
-            organizr_bot.send_message(message.chat.id, "Welcome! You have been successfully registered as a new user.")
+            organizr_bot.send_message(message.chat.id, "✅ *Welcome\\!* You have been successfully registered as a new user\\.", parse_mode='MarkdownV2')
         
         # Proceed to actually handle the message
         handle_message(message)
     except Exception as e:
         logger.error(f"An error occurred while handling message for user {user_id_str}: {e}", exc_info=True)
-        organizr_bot.send_message(message.chat.id, "Sorry, an unexpected error occurred. Please try again later.")
+        organizr_bot.send_message(message.chat.id, "❌ _Sorry, an unexpected error occurred\\. Please try again later\\._", parse_mode='MarkdownV2')
 
-
+def normalize_message_obj(m):
+    """
+    Return a JSON-serializable dict for a message-like object.
+    Accepts:
+      - plain dicts (returned unchanged)
+      - pydantic/OpenAI response objects (via model_dump/model_dump_json/.dict)
+      - simple objects with attributes (role, content, name, id, tool_calls, ...)
+    """
+    if isinstance(m, dict):
+        return m
+    # pydantic v2 style
+    if hasattr(m, "model_dump"):
+        try:
+            return m.model_dump(mode="json")
+        except Exception:
+            # fallback
+            return m.model_dump() if hasattr(m, "model_dump") else dict()
+    # older pydantic / other object fallback
+    if hasattr(m, "dict"):
+        try:
+            return m.dict()
+        except Exception:
+            pass
+    # last resort: pull likely attributes
+    out = {}
+    for attr in ("role", "content", "name", "id", "tool_call_id", "tool_calls"):
+        if hasattr(m, attr):
+            out[attr] = getattr(m, attr)
+    # if content is a nested pydantic model list/obj, try to serialize
+    try:
+        json.dumps(out)  # test-serializable
+        return out
+    except Exception:
+        # as a final fallback return stringified object for content
+        return {"role": getattr(m, "role", "assistant"), "content": str(getattr(m, "content", m))}
+    
 def handle_message(msg):
     """Main logic to process a message: load history, call LLM, handle tools, and save history."""
     telegram_id = str(msg.from_user.id)
@@ -85,13 +120,13 @@ def handle_message(msg):
     internal_user_id = api.id_to_internal(telegram_id)
     if not internal_user_id:
         logger.error(f"Could not translate telegram ID {telegram_id} to internal ID.")
-        organizr_bot.send_message(chat_id, "There was an issue identifying your user account. Cannot proceed.")
+        organizr_bot.send_message(chat_id, "❌ _There was an issue identifying your user account\\. Cannot proceed\\._", parse_mode='MarkdownV2')
         return
     
     admin_internal_id = api.id_to_internal("admin")
     if not admin_internal_id:
         logger.error("Could not find internal ID for admin user.")
-        organizr_bot.send_message(chat_id, "Critical error: Admin account not found. Please contact the administrator.")
+        organizr_bot.send_message(chat_id, "❌ *Critical error:* _Admin account not found\\. Please contact the administrator\\._", parse_mode='MarkdownV2')
         return
 
     # Load chat history
@@ -137,27 +172,28 @@ def handle_message(msg):
                 # tool_choice="auto" is default
             )
             response_message = request.choices[0].message
-            messages.append(response_message)
+            response_message_dict = normalize_message_obj(response_message)
+            messages.append(response_message_dict)
 
-            if response_message.tool_calls:
-                logger.info(f"LLM requested {len(response_message.tool_calls)} tool call(s).")
-                tool_calls = response_message.tool_calls
+            tool_calls = None
+            if hasattr(response_message, "tool_calls"):
+                tool_calls = getattr(response_message, "tool_calls")
+            else:
+                tool_calls = response_message_dict.get("tool_calls")
+
+
+            if tool_calls:
+                logger.info(f"LLM requested {len(tool_calls)} tool call(s).")
                 for tool_call in tool_calls:
-                    fn_name = tool_call.function.name
-                    args_str = tool_call.function.arguments
+                    fn_name = getattr(tool_call.function, "name", None) or tool_call.get("function", {}).get("name")
+                    args_str = getattr(tool_call.function, "arguments", None) or tool_call.get("function", {}).get("arguments")
                     logger.info(f"Executing tool: {fn_name}({args_str})")
-
                     try:
                         function_to_call = getattr(api, fn_name)
-                        args = json.loads(args_str)
-                        
-                        # Automatically inject `for_user` if the function expects it
-                        # This simplifies the LLM's job.
+                        args = json.loads(args_str) if isinstance(args_str, str) else (args_str or {})
                         if "for_user" in function_to_call.__code__.co_varnames:
                             args['for_user'] = internal_user_id
-                        
                         result = function_to_call(**args)
-                        
                     except AttributeError:
                         logger.error(f"Function {fn_name} not found in api.py.")
                         result = f"Error: Function {fn_name} not found."
@@ -170,32 +206,34 @@ def handle_message(msg):
 
                     messages.append({
                         "role": "tool",
-                        "tool_call_id": tool_call.id,
+                        "tool_call_id": getattr(tool_call, "id", tool_call.get("id") if isinstance(tool_call, dict) else None),
                         "name": fn_name,
                         "content": str(result)
                     })
-                    # Optional: Inform user about tool calls for debugging/transparency
-                    organizr_bot.send_message(chat_id, f" Executed: {fn_name}(...)\nResult: {str(result)[:200]}")
+                    
+                    # Let the user know what tool is being executed
+                    result_str = str(result)
+                    organizr_bot.send_message(chat_id, f"```\n⚙️ Executed: {fn_name}(...)\n\nResult:\n{result_str[:200]}\n```", parse_mode='MarkdownV2')
 
             else:
-                # No more tool calls, we have the final answer
-                final_content = response_message.content
+                # No more tool calls, final answer
+                final_content = response_message_dict.get("content") or response_message_dict.get("text") or ""
                 logger.info(f"Final response for user {internal_user_id}: \"{final_content}\"")
-                
-                # Save chat history
-                messages_to_store = [m for m in messages if m.role != "system"]
-                
+
+                # Save all messages that arent the dynamic system message
+                messages_to_store = [m for m in messages if m.get("role") != "system"]
+
                 if note_id:
                     api.update_note(note_id=note_id, new_content=json.dumps(messages_to_store))
                 else:
                     api.create_note(for_user=admin_internal_id, title=telegram_id, content=json.dumps(messages_to_store))
-
-                organizr_bot.reply_to(msg, final_content)
-                break # Exit the loop
+                
+                organizr_bot.reply_to(msg, final_content, parse_mode='MarkdownV2')
+                break
 
         except Exception as e:
             logger.error(f"An error occurred in the LLM loop for user {internal_user_id}: {e}", exc_info=True)
-            organizr_bot.send_message(chat_id, "An error occurred while processing your request. Please try again.")
+            organizr_bot.send_message(chat_id, "❌ _An error occurred while processing your request\\. Please try again\\._", parse_mode='MarkdownV2')
             break
 
 
@@ -207,6 +245,29 @@ def get_system_message(msg, internal_user_id):
 - You are **casual, friendly, and conversational**. Use a tone appropriate for a chat app.
 - You are **proactive and helpful**. If a user's request is ambiguous, ask for clarification.
 - You are **concise**. Get to the point, but be polite.
+- When writing, you format messages using Telegram's MarkdownV2 format, which has specific escaping rules you must follow.
+
+### MarkdownV2 Formatting Rules:
+You MUST follow these exact escaping rules for MarkdownV2:
+- **Bold text**: `*bold text*` (asterisks must NOT be escaped when used for formatting)
+- **Italic text**: `_italic text_` (underscores must NOT be escaped when used for formatting)  
+- **Underlined text**: `__underlined text__` (double underscores must NOT be escaped when used for formatting)
+- **Strikethrough**: `~strikethrough~` (tildes must NOT be escaped when used for formatting)
+- **Spoiler**: `||spoiler||` (double pipes must NOT be escaped when used for formatting)
+- **Inline code**: `` `code` `` (backticks must NOT be escaped when used for formatting)
+- **Code blocks**: Use triple backticks ``` without escaping them
+
+**CRITICAL**: The following characters MUST be escaped with a backslash when they appear in regular text (not as formatting):
+`_`, `*`, `[`, `]`, `(`, `)`, `~`, `` ` ``, `>`, `#`, `+`, `-`, `=`, `|`, `{`, `}`, `.`, `!`
+
+**Examples of correct escaping:**
+- Regular text with special chars: `This costs $5\.99\!` 
+- Bold text: `*This is bold*` (no escaping needed for formatting asterisks)
+- Mixed: `*Bold text* costs $5\.99\!` (escape special chars in regular text, not formatting chars)
+- Links: `[Google](https://google\.com)` (escape dots in URLs but not the bracket/parenthesis syntax)
+- Lists: Use `•` bullet character instead of `*` or `-` to avoid conflicts
+
+Always apply these rules consistently to ensure proper message rendering.
 
 ### Core Task:
 Your goal is to understand the user's natural language request and translate it into one or more tool calls to the organizr-api. You MUST use the provided tools to fulfill requests related to notes, tasks, and calendar.
