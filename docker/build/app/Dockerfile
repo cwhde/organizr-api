@@ -13,7 +13,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy app and install Python dependencies
-COPY /app/requirements .
+COPY /app/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Remove unnecessary file
