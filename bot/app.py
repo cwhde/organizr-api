@@ -183,7 +183,7 @@ def handle_message(msg):
                 logger.info(f"Final response for user {internal_user_id}: \"{final_content}\"")
                 
                 # Save chat history
-                messages_to_store = [m for m in messages if m.get("role") != "system"]
+                messages_to_store = [m for m in messages if m.role != "system"]
                 
                 if note_id:
                     api.update_note(note_id=note_id, new_content=json.dumps(messages_to_store))
