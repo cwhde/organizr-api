@@ -1,4 +1,4 @@
-py-telegram-bot-api
+telebot
 openai
 tiktoken
 requests
