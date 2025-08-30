@@ -7,7 +7,9 @@ import logging
 import api
 import os
 import json
+import re
 from datetime import datetime
+import html
 
 # Env vars from docker compose
 telegram_key = os.environ.get('TELEGRAM_API_KEY')
@@ -29,6 +31,79 @@ llm = openai.OpenAI(
     base_url=openai_baseurl,
     api_key=openai_key
 )
+
+def parse_md_to_telegram_html(text: str) -> str:
+    """
+    Parses a subset of Markdown and converts it to Telegram-compatible HTML.
+    This version handles tables, task lists, blockquotes, and nested lists.
+    """
+    if not text:
+        return ""
+
+    # Placeholders for content that needs protection from other parsing rules
+    placeholders = {}
+    def add_placeholder(key, value):
+        # Using a dash-based placeholder to avoid conflict with markdown's underscores for bold/italic
+        ph_key = f"PLACEHOLDER-{key}-{len(placeholders)}"
+        placeholders[ph_key] = value
+        return ph_key
+
+    # 1. Protect code blocks, tables, and inline code first
+    # ```code``` -> <pre>
+    processed_text = re.sub(
+        r'```(?:[a-zA-Z0-9]+)?\n(.*?)\n```',
+        lambda m: add_placeholder("pre", f"<pre>{html.escape(m.group(1).strip())}</pre>"),
+        text, flags=re.DOTALL
+    )
+    # | Table | -> <pre>
+    processed_text = re.sub(
+        r'(^\|.*\|(?:\n\|.*\|)+)',
+        lambda m: add_placeholder("pre-table", f"<pre>{html.escape(m.group(1).strip())}</pre>"),
+        processed_text, flags=re.MULTILINE
+    )
+    # `code` -> <code>
+    processed_text = re.sub(
+        r'`(.*?)`',
+        lambda m: add_placeholder("code", f"<code>{html.escape(m.group(1).strip())}</code>"),
+        processed_text
+    )
+
+    # 2. Escape the rest of the text to prevent raw HTML injection
+    processed_text = html.escape(processed_text)
+
+    # 3. Apply markdown parsing rules to the escaped text
+    # Links: [text](url)
+    processed_text = re.sub(
+        r'\[(.*?)\]\((.*?)\)',
+        lambda m: f'<a href="{html.unescape(m.group(2))}">{m.group(1)}</a>',
+        processed_text
+    )
+    # Bold: **text** or __text__
+    processed_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', processed_text)
+    processed_text = re.sub(r'__(.*?)__', r'<b>\1</b>', processed_text)
+    # Italic: *text* or _text_
+    processed_text = re.sub(r'\*(.*?)\*', r'<i>\1</i>', processed_text)
+    processed_text = re.sub(r'_(.*?)_', r'<i>\1</i>', processed_text)
+    # Strikethrough: ~~text~~
+    processed_text = re.sub(r'~~(.*?)~~', r'<s>\1</s>', processed_text)
+    
+    # 4. Handle block-level elements by converting them to text formatting
+    # Blockquotes: > quote -> <i>quote</i>
+    processed_text = re.sub(r'^\s*&gt;\s+(.*)', r'<i>\1</i>', processed_text, flags=re.MULTILINE)
+    # Task lists: - [x] task -> ✅ task
+    processed_text = re.sub(r'^\s*-\s*\[x\]\s*(.*)', r'✅ \1', processed_text, flags=re.MULTILINE)
+    processed_text = re.sub(r'^\s*-\s*\[ \]\s*(.*)', r'⬜️ \1', processed_text, flags=re.MULTILINE)
+    # Nested lists: * item ->   • item
+    processed_text = re.sub(r'^\s{2,}[\*\-]\s+(.*)', r'  • \1', processed_text, flags=re.MULTILINE)
+    # Regular lists: * item -> • item
+    processed_text = re.sub(r'^\s*[\*\-]\s+(.*)', r'• \1', processed_text, flags=re.MULTILINE)
+    processed_text = re.sub(r'^\s*(\d+)\.\s+(.*)', r'\1. \2', processed_text, flags=re.MULTILINE)
+
+    # 5. Restore all protected content
+    for ph_key, ph_value in placeholders.items():
+        processed_text = processed_text.replace(ph_key, ph_value)
+        
+    return processed_text.strip()
 
 def run_bot():
     """Start the telegram bot with checks, preparations and then the final infinite polling"""
@@ -67,13 +142,13 @@ def message_entrypoint(message):
         if not api.check_user_exists_in_app(user_id_str):
             logger.info(f"User {user_id_str} not found in API. Creating new user and link.")
             api.create_and_link_user(user_id_str)
-            organizr_bot.send_message(message.chat.id, "✅ *Welcome\\!* You have been successfully registered as a new user\\.", parse_mode='MarkdownV2')
+            organizr_bot.send_message(message.chat.id, "✅ *Welcome!* You have been successfully registered as a new user.", parse_mode='Markdown')
         
         # Proceed to actually handle the message
         handle_message(message)
     except Exception as e:
         logger.error(f"An error occurred while handling message for user {user_id_str}: {e}", exc_info=True)
-        organizr_bot.send_message(message.chat.id, "❌ _Sorry, an unexpected error occurred\\. Please try again later\\._", parse_mode='MarkdownV2')
+        organizr_bot.send_message(message.chat.id, "❌ _Sorry, an unexpected error occurred. Please try again later._", parse_mode='Markdown')
 
 def normalize_message_obj(m):
     """
@@ -120,13 +195,13 @@ def handle_message(msg):
     internal_user_id = api.id_to_internal(telegram_id)
     if not internal_user_id:
         logger.error(f"Could not translate telegram ID {telegram_id} to internal ID.")
-        organizr_bot.send_message(chat_id, "❌ _There was an issue identifying your user account\\. Cannot proceed\\._", parse_mode='MarkdownV2')
+        organizr_bot.send_message(chat_id, "❌ _There was an issue identifying your user account. Cannot proceed._", parse_mode='Markdown')
         return
     
     admin_internal_id = api.id_to_internal("admin")
     if not admin_internal_id:
         logger.error("Could not find internal ID for admin user.")
-        organizr_bot.send_message(chat_id, "❌ *Critical error:* _Admin account not found\\. Please contact the administrator\\._", parse_mode='MarkdownV2')
+        organizr_bot.send_message(chat_id, "❌ *Critical error:* _Admin account not found. Please contact the administrator._", parse_mode='Markdown')
         return
 
     # Load chat history
@@ -168,7 +243,7 @@ def handle_message(msg):
                 model=openai_model,
                 messages=messages,
                 tools=api.functions,
-                temperature=0.2,
+                temperature=0.0,
                 # tool_choice="auto" is default
             )
             response_message = request.choices[0].message
@@ -187,10 +262,16 @@ def handle_message(msg):
                 for tool_call in tool_calls:
                     fn_name = getattr(tool_call.function, "name", None) or tool_call.get("function", {}).get("name")
                     args_str = getattr(tool_call.function, "arguments", None) or tool_call.get("function", {}).get("arguments")
-                    logger.info(f"Executing tool: {fn_name}({args_str})")
+                    
                     try:
                         function_to_call = getattr(api, fn_name)
                         args = json.loads(args_str) if isinstance(args_str, str) else (args_str or {})
+                        
+                        # Log the tool call with arguments
+                        arg_string = ', '.join(f'{k}={repr(v)}' for k, v in args.items())
+                        tool_call_info = f"{fn_name}({arg_string})"
+                        logger.info(f"Executing tool: {tool_call_info}")
+                        
                         if "for_user" in function_to_call.__code__.co_varnames:
                             args['for_user'] = internal_user_id
                         result = function_to_call(**args)
@@ -213,11 +294,12 @@ def handle_message(msg):
                     
                     # Let the user know what tool is being executed
                     result_str = str(result)
-                    organizr_bot.send_message(chat_id, f"```\n⚙️ Executed: {fn_name}(...)\n\nResult:\n{result_str[:200]}\n```", parse_mode='MarkdownV2')
+                    tool_exec_msg = f"⚙️ Executed: {tool_call_info}\n\nResult:\n{result_str[:200]}"
+                    organizr_bot.send_message(chat_id, f"```{tool_exec_msg}```", parse_mode='Markdown')
 
             else:
                 # No more tool calls, final answer
-                final_content = response_message_dict.get("content") or response_message_dict.get("text") or ""
+                final_content = response_message_dict.get("content") or ""
                 logger.info(f"Final response for user {internal_user_id}: \"{final_content}\"")
 
                 # Save all messages that arent the dynamic system message
@@ -228,12 +310,15 @@ def handle_message(msg):
                 else:
                     api.create_note(for_user=admin_internal_id, title=telegram_id, content=json.dumps(messages_to_store))
                 
-                organizr_bot.reply_to(msg, final_content, parse_mode='MarkdownV2')
+                # Convert basic markdown to Telegram-safe HTML using the custom parser
+                telegram_safe_html = parse_md_to_telegram_html(final_content)
+                
+                organizr_bot.reply_to(msg, telegram_safe_html, parse_mode='HTML')
                 break
 
         except Exception as e:
             logger.error(f"An error occurred in the LLM loop for user {internal_user_id}: {e}", exc_info=True)
-            organizr_bot.send_message(chat_id, "❌ _An error occurred while processing your request\\. Please try again\\._", parse_mode='MarkdownV2')
+            organizr_bot.send_message(chat_id, "❌ _An error occurred while processing your request. Please try again._", parse_mode='Markdown')
             break
 
 
@@ -245,29 +330,16 @@ def get_system_message(msg, internal_user_id):
 - You are **casual, friendly, and conversational**. Use a tone appropriate for a chat app.
 - You are **proactive and helpful**. If a user's request is ambiguous, ask for clarification.
 - You are **concise**. Get to the point, but be polite.
-- When writing, you format messages using Telegram's MarkdownV2 format, which has specific escaping rules you must follow.
+- When writing, you format messages using standard Markdown. The output will be converted to HTML for display in Telegram.
 
-### MarkdownV2 Formatting Rules:
-You MUST follow these exact escaping rules for MarkdownV2:
-- **Bold text**: `*bold text*` (asterisks must NOT be escaped when used for formatting)
-- **Italic text**: `_italic text_` (underscores must NOT be escaped when used for formatting)  
-- **Underlined text**: `__underlined text__` (double underscores must NOT be escaped when used for formatting)
-- **Strikethrough**: `~strikethrough~` (tildes must NOT be escaped when used for formatting)
-- **Spoiler**: `||spoiler||` (double pipes must NOT be escaped when used for formatting)
-- **Inline code**: `` `code` `` (backticks must NOT be escaped when used for formatting)
-- **Code blocks**: Use triple backticks ``` without escaping them
-
-**CRITICAL**: The following characters MUST be escaped with a backslash when they appear in regular text (not as formatting):
-`_`, `*`, `[`, `]`, `(`, `)`, `~`, `` ` ``, `>`, `#`, `+`, `-`, `=`, `|`, `{`, `}`, `.`, `!`
-
-**Examples of correct escaping:**
-- Regular text with special chars: `This costs $5\.99\!` 
-- Bold text: `*This is bold*` (no escaping needed for formatting asterisks)
-- Mixed: `*Bold text* costs $5\.99\!` (escape special chars in regular text, not formatting chars)
-- Links: `[Google](https://google\.com)` (escape dots in URLs but not the bracket/parenthesis syntax)
-- Lists: Use `•` bullet character instead of `*` or `-` to avoid conflicts
-
-Always apply these rules consistently to ensure proper message rendering.
+### Markdown Formatting Guidelines:
+- For headings or titles, use bold text (e.g., `**My Title**`). Do not use markdown headings (`#`, `##`, etc.), as the markdown headings #, ##, and ### aren't supported/rendered and worsen the users experience.
+- Use `**bold text**` or `__bold text__` for bold.
+- Use `*italic text*` or `_italic text_` for italics.
+- Use `~~strikethrough~~` for strikethrough.
+- Use `` `inline fixed-width code` `` for inline code.
+- Use fenced code blocks (```) for multi-line code.
+- For lists, you can use `*`, `-`, or `1.` at the start of the line.
 
 ### Core Task:
 Your goal is to understand the user's natural language request and translate it into one or more tool calls to the organizr-api. You MUST use the provided tools to fulfill requests related to notes, tasks, and calendar.
