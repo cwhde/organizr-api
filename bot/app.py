@@ -8,6 +8,7 @@ import api
 import os
 import json
 import re
+import requests
 from datetime import datetime
 import html
 
@@ -16,6 +17,7 @@ telegram_key = os.environ.get('TELEGRAM_API_KEY')
 openai_key = os.environ.get('OPENAI_API_KEY')
 openai_baseurl = os.environ.get('OPENAI_BASE_URL')
 openai_model = os.environ.get('OPENAI_MODEL')
+deepgram_key = os.environ.get('DEEPGRAM_API_KEY')
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -31,6 +33,53 @@ llm = openai.OpenAI(
     base_url=openai_baseurl,
     api_key=openai_key
 )
+
+def transcribe_voice_message(voice_file_content):
+    """
+    Transcribes voice message using Deepgram API.
+    Returns the transcribed text or None if transcription fails.
+    """
+    if not deepgram_key:
+        logger.error("DEEPGRAM_API_KEY not found in environment variables")
+        return None
+    
+    try:
+        url = "https://api.deepgram.com/v1/listen"
+        headers = {
+            "Authorization": f"Token {deepgram_key}",
+            "Content-Type": "audio/*"
+        }
+        
+        # Add query parameters for better transcription
+        params = {
+            "smart_format": "true",
+            "punctuate": "true", 
+            "paragraphs": "true",
+            "filler_words": "true",
+            "detect_language": "true",
+            "model": "nova-2"
+        }
+        
+        logger.info("Sending voice message to Deepgram for transcription")
+        response = requests.post(url, headers=headers, data=voice_file_content, params=params)
+        
+        if response.status_code == 200:
+            result = response.json()
+            # Extract transcript from the response
+            transcript = result.get("results", {}).get("channels", [{}])[0].get("alternatives", [{}])[0].get("transcript", "")
+            if transcript.strip():
+                logger.info(f"Successfully transcribed voice message: {transcript[:100]}...")
+                return transcript.strip()
+            else:
+                logger.warning("Deepgram returned empty transcript")
+                return None
+        else:
+            logger.error(f"Deepgram API error: {response.status_code} - {response.text}")
+            return None
+            
+    except Exception as e:
+        logger.error(f"Error transcribing voice message: {e}", exc_info=True)
+        return None
 
 def parse_md_to_telegram_html(text: str) -> str:
     """
@@ -132,11 +181,11 @@ def run_bot():
     organizr_bot.infinity_polling()
 
 
-@organizr_bot.message_handler(func=lambda message: True)
+@organizr_bot.message_handler(content_types=['text', 'voice'])
 def message_entrypoint(message):
-    """Handles all incoming messages, checks user registration, and passes to the main logic."""
+    """Handles all incoming messages (text and voice), checks user registration, and passes to the main logic."""
     user_id_str = str(message.from_user.id)
-    logger.info(f"Received message from Telegram user ID {user_id_str}")
+    logger.info(f"Received {message.content_type} message from Telegram user ID {user_id_str}")
 
     try:
         if not api.check_user_exists_in_app(user_id_str):
@@ -144,8 +193,33 @@ def message_entrypoint(message):
             api.create_and_link_user(user_id_str)
             organizr_bot.send_message(message.chat.id, "✅ *Welcome!* You have been successfully registered as a new user.", parse_mode='Markdown')
         
-        # Proceed to actually handle the message
-        handle_message(message)
+        # Handle voice messages
+        if message.content_type == 'voice':
+            try:
+                # Get voice message info
+                voice = message.voice
+                logger.info(f"Processing voice message: {voice.duration}s, {voice.file_size} bytes")
+                
+                # Download the voice file
+                file_info = organizr_bot.get_file(voice.file_id)
+                downloaded_file = organizr_bot.download_file(file_info.file_path)
+                
+                # Transcribe the voice message
+                transcribed_text = transcribe_voice_message(downloaded_file)
+                
+                if transcribed_text:
+                    # Process the transcribed text
+                    handle_message(message, message_text=transcribed_text)
+                else:
+                    organizr_bot.reply_to(message, "❌ _Sorry, I couldn't transcribe your voice message. Please try again or send a text message._", parse_mode='Markdown')
+                    
+            except Exception as e:
+                logger.error(f"Error processing voice message: {e}", exc_info=True)
+                organizr_bot.reply_to(message, "❌ _Error processing voice message. Please try again._", parse_mode='Markdown')
+        else:
+            # Handle text messages normally
+            handle_message(message)
+            
     except Exception as e:
         logger.error(f"An error occurred while handling message for user {user_id_str}: {e}", exc_info=True)
         organizr_bot.send_message(message.chat.id, "❌ _Sorry, an unexpected error occurred. Please try again later._", parse_mode='Markdown')
@@ -186,10 +260,13 @@ def normalize_message_obj(m):
         # as a final fallback return stringified object for content
         return {"role": getattr(m, "role", "assistant"), "content": str(getattr(m, "content", m))}
     
-def handle_message(msg):
+def handle_message(msg, message_text=None):
     """Main logic to process a message: load history, call LLM, handle tools, and save history."""
     telegram_id = str(msg.from_user.id)
     chat_id = msg.chat.id
+
+    # Use provided message_text or extract from message object
+    text_content = message_text if message_text is not None else msg.text
 
     # Get internal API user ID
     internal_user_id = api.id_to_internal(telegram_id)
@@ -233,7 +310,7 @@ def handle_message(msg):
 
     # Add system message at start and user message at end
     messages.insert(0, {"role": "system", "content": get_system_message(msg, internal_user_id)})
-    messages.append({"role": "user", "content": msg.text})
+    messages.append({"role": "user", "content": text_content})
 
     # Main loop for LLM interaction and tool calls
     while True:
