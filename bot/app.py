@@ -11,6 +11,7 @@ import re
 import requests
 from datetime import datetime
 import html
+import traceback
 
 # Env vars from docker compose
 telegram_key = os.environ.get('TELEGRAM_API_KEY')
@@ -33,6 +34,78 @@ llm = openai.OpenAI(
     base_url=openai_baseurl,
     api_key=openai_key
 )
+
+SENSITIVE_ENV_VARS = [
+    # Known keys used by this project
+    "TELEGRAM_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL",
+    "DEEPGRAM_API_KEY", "ORGANIZR_API_KEY", "ORGANIZR_BASE_URL",
+    # Common secret names
+    "API_KEY", "API_TOKEN", "ACCESS_TOKEN", "AUTH_TOKEN", "SECRET_KEY",
+    "JWT", "BEARER", "PASSWORD", "PASS", "PWD", "COOKIE", "SESSION",
+    "DATABASE_URL", "DB_URL", "DB_PASSWORD", "DB_USER", "DB_USERNAME",
+]
+
+def _collect_secret_values() -> list:
+    """Collect values of sensitive environment variables to redact.
+    Returns a list of non-empty unique strings sorted by length desc.
+    """
+    values = set()
+    for key, val in os.environ.items():
+        if not val:
+            continue
+        # redact if explicitly listed or key name looks sensitive
+        if key in SENSITIVE_ENV_VARS or re.search(r"(KEY|SECRET|TOKEN|PASS|PWD|AUTH|COOKIE|SESSION|WEBHOOK)", key, re.I):
+            values.add(val)
+    # Also add derived Authorization header forms if present
+    if openai_key:
+        values.add(f"Bearer {openai_key}")
+    if telegram_key:
+        values.add(telegram_key)
+    if deepgram_key:
+        values.add(deepgram_key)
+    return sorted(values, key=len, reverse=True)
+
+def sanitize_text(text: str, max_len: int = 1500) -> str:
+    """Redact sensitive values and trim length for safe Telegram display.
+    - Redacts any env var values collected by _collect_secret_values.
+    - Redacts common token-like patterns.
+    - Truncates to max_len characters.
+    """
+    if not text:
+        return ""
+    try:
+        redacted = str(text)
+        # redact env var values
+        for secret in _collect_secret_values():
+            if secret and secret in redacted:
+                redacted = redacted.replace(secret, "***REDACTED***")
+        # redact obvious JWT-like tokens (three base64url segments)
+        redacted = re.sub(r"\b[\w-]+\.[\w-]+\.[\w-]+\b", "***REDACTED-TOKEN***", redacted)
+        # redact long hex/base64 strings that look like keys (32+ chars)
+        redacted = re.sub(r"\b[a-f0-9]{32,}\b", "***REDACTED-HEX***", redacted, flags=re.I)
+        redacted = re.sub(r"\b[A-Za-z0-9+/]{40,}={0,2}\b", "***REDACTED-BASE64***", redacted)
+        # avoid breaking Markdown code blocks; strip backticks excess
+        redacted = redacted.replace("```", "`\u200b``")
+        # final truncate
+        if len(redacted) > max_len:
+            redacted = redacted[:max_len - 3] + "..."
+        return redacted
+    except Exception:
+        # best-effort fallback
+        return (text[:max_len - 3] + "...") if len(text) > max_len else text
+
+def build_error_report(prefix: str, exc: Exception, include_trace: bool = True) -> str:
+    """Build a sanitized, human-friendly error block suitable for Telegram.
+    prefix: short context like 'Error processing voice message'.
+    """
+    cls = exc.__class__.__name__
+    msg = f"{cls}: {exc}"
+    body = msg
+    if include_trace:
+        tb = traceback.format_exc(limit=12)
+        body = f"{msg}\n\nTraceback (last 12 frames):\n{tb}"
+    safe = sanitize_text(body)
+    return f"❌ {prefix}\n\n```\n{safe}\n```"
 
 def transcribe_voice_message(voice_file_content):
     """
@@ -57,7 +130,7 @@ def transcribe_voice_message(voice_file_content):
             "paragraphs": "true",
             "filler_words": "true",
             "detect_language": "true",
-            "model": "nova-2"
+            "model": "whisper-large"
         }
         
         logger.info("Sending voice message to Deepgram for transcription")
@@ -199,30 +272,30 @@ def message_entrypoint(message):
                 # Get voice message info
                 voice = message.voice
                 logger.info(f"Processing voice message: {voice.duration}s, {voice.file_size} bytes")
-                
+
                 # Download the voice file
                 file_info = organizr_bot.get_file(voice.file_id)
                 downloaded_file = organizr_bot.download_file(file_info.file_path)
-                
+
                 # Transcribe the voice message
                 transcribed_text = transcribe_voice_message(downloaded_file)
-                
+
                 if transcribed_text:
                     # Process the transcribed text
                     handle_message(message, message_text=transcribed_text)
                 else:
                     organizr_bot.reply_to(message, "❌ _Sorry, I couldn't transcribe your voice message. Please try again or send a text message._", parse_mode='Markdown')
-                    
+
             except Exception as e:
                 logger.error(f"Error processing voice message: {e}", exc_info=True)
-                organizr_bot.reply_to(message, "❌ _Error processing voice message. Please try again._", parse_mode='Markdown')
+                organizr_bot.reply_to(message, build_error_report("Error processing voice message", e), parse_mode='Markdown')
         else:
             # Handle text messages normally
             handle_message(message)
-            
+
     except Exception as e:
         logger.error(f"An error occurred while handling message for user {user_id_str}: {e}", exc_info=True)
-        organizr_bot.send_message(message.chat.id, "❌ _Sorry, an unexpected error occurred. Please try again later._", parse_mode='Markdown')
+        organizr_bot.send_message(message.chat.id, build_error_report("Unexpected error while handling your message", e), parse_mode='Markdown')
 
 def normalize_message_obj(m):
     """
@@ -240,7 +313,7 @@ def normalize_message_obj(m):
             return m.model_dump(mode="json")
         except Exception:
             # fallback
-            return m.model_dump() if hasattr(m, "model_dump") else dict()
+            return m.model_dump() if hasattr(m, "model_dump") else {}
     # older pydantic / other object fallback
     if hasattr(m, "dict"):
         try:
@@ -320,8 +393,7 @@ def handle_message(msg, message_text=None):
                 model=openai_model,
                 messages=messages,
                 tools=api.functions,
-                temperature=0.0,
-                # tool_choice="auto" is default
+                temperature=0.1,
             )
             response_message = request.choices[0].message
             response_message_dict = normalize_message_obj(response_message)
@@ -370,9 +442,9 @@ def handle_message(msg, message_text=None):
                     })
                     
                     # Let the user know what tool is being executed
-                    result_str = str(result)
-                    tool_exec_msg = f"⚙️ Executed: {tool_call_info}\n\nResult:\n{result_str[:200]}"
-                    organizr_bot.send_message(chat_id, f"```{tool_exec_msg}```", parse_mode='Markdown')
+                    result_str = sanitize_text(str(result), max_len=1200)
+                    tool_exec_msg = f"⚙️ Executed: {sanitize_text(tool_call_info, max_len=300)}\n\nResult:\n{result_str}"
+                    organizr_bot.send_message(chat_id, f"```\n{tool_exec_msg}\n```", parse_mode='Markdown')
 
             else:
                 # No more tool calls, final answer
@@ -395,7 +467,7 @@ def handle_message(msg, message_text=None):
 
         except Exception as e:
             logger.error(f"An error occurred in the LLM loop for user {internal_user_id}: {e}", exc_info=True)
-            organizr_bot.send_message(chat_id, "❌ _An error occurred while processing your request. Please try again._", parse_mode='Markdown')
+            organizr_bot.send_message(chat_id, build_error_report("Error while processing your request", e), parse_mode='Markdown')
             break
 
 
