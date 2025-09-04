@@ -1,4 +1,4 @@
-# App management routes
+# Apps route of the API
 
 import logging
 from fastapi import APIRouter, HTTPException, Header, Query

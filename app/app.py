@@ -28,7 +28,7 @@ app.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
 app.include_router(notes.router, prefix="/notes", tags=["notes"])
 
 
-# Health check endpoint
+# Health check endpoint, maily for docker health checks
 @app.get("/health")
 async def health():
     return {"status": "ok"}

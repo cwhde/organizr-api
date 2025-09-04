@@ -1,3 +1,5 @@
+# Test the main app file of the API
+
 import pytest
 import sys
 import os

@@ -39,6 +39,7 @@ class CalendarEvent(BaseModel):
     tags: Optional[List[str]] = []
 
 
+# datetime fields are str in ISO format when creating for ease of use
 class CalendarEventCreate(BaseModel):
     id: int
     user_id: str
@@ -60,6 +61,7 @@ class Task(BaseModel):
     tags: Optional[List[str]] = []
 
 
+# datetime fields are str in ISO format when creating for ease of use
 class TaskCreate(BaseModel):
     user_id: str
     title: str

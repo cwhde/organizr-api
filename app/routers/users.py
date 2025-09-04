@@ -83,7 +83,7 @@ async def get_user(
     user_id: str,
     api_key: str = Header(..., alias="X-API-Key")
 ):
-    """Get user details"""
+    """Get a specific user's details"""
     requester_id, _, has_permission = utils.validate_api_key(api_key, user_id)
     
     if not requester_id or not has_permission:
@@ -121,7 +121,7 @@ async def update_user(
     utc_offset_minutes: int,
     api_key: str = Header(..., alias="X-API-Key")
 ):
-    """Update user details"""
+    """Update a specific user's details"""
     requester_id, _, has_permission = utils.validate_api_key(api_key, user_id)
     
     if not requester_id or not has_permission:

@@ -1,3 +1,5 @@
+# Test the apps route of the API
+
 import pytest
 import sys
 import os

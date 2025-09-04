@@ -1,4 +1,4 @@
-# Utility functions for the organizr api
+# Shared tility functions for the organizr api
 
 import hashlib
 import secrets
@@ -30,7 +30,7 @@ def generate_api_key():
     return secrets.token_urlsafe(32)
 
 def hash_api_key(api_key):
-    """Hash an API key using SHA-256"""
+    """Hash an API key using SHA-256 for storage"""
     return hashlib.sha256(api_key.encode()).hexdigest()
 
 def validate_api_key(api_key, target_user_id=None):
@@ -39,7 +39,7 @@ def validate_api_key(api_key, target_user_id=None):
     
     Args:
         api_key: API key to validate
-        target_user_id: Optional user ID to check permissions against
+        target_user_id: we check has_permission against given api_key unless target_user_id is specified, then we check if the api key has control over the given user_id
     
     Returns:
         tuple: (user_id, user_role, has_permission)
@@ -60,7 +60,7 @@ def validate_api_key(api_key, target_user_id=None):
         
         user_id, user_role = result
         
-        # Check permissions
+        # Check permissions, key always has rights over its own user, only admin has rights over other use
         has_permission = False
         if target_user_id is None or user_role == 'admin' or user_id == target_user_id:
             has_permission = True
@@ -121,6 +121,7 @@ def validate_entry_access(api_key: str, resource_type: ResourceType, resource_id
     if not user_id:
         raise HTTPException(status_code=403, detail="Invalid API key")
 
+    # Mysql table names
     table_map = {
         ResourceType.CALENDAR: "calendar_entries",
         ResourceType.TASK: "tasks",
@@ -138,6 +139,7 @@ def validate_entry_access(api_key: str, resource_type: ResourceType, resource_id
     if not result:
         raise HTTPException(status_code=404, detail=f"{resource_type.value.capitalize()} entry not found")
 
+    # Non admin can only access their own entries
     if user_role != 'admin':
         entry_owner_id = result[0]
         if user_id != entry_owner_id:
@@ -280,6 +282,7 @@ def handle_rrule_query(events_with_rrule, start_date, end_date):
     if start_dt >= end_dt:
         raise HTTPException(status_code=400, detail="'start_date' must be before 'end_date'")
 
+    # Build iCal calendar from events
     try:
         cal = _build_ical_from_events(events_with_rrule)
         cal_bytes = cal.to_ical()
@@ -291,6 +294,7 @@ def handle_rrule_query(events_with_rrule, start_date, end_date):
         logger.error(f"Error expanding rrules: {ex}")
         raise HTTPException(status_code=500, detail="Failed to expand recurring events")
 
+    # Convert occurrences back to our format
     results = []
     for comp in occurrences:
         try:
@@ -326,7 +330,7 @@ def build_query_filters(search_text=None, tags=None, status=None, match_mode="an
     return conds, params
 
 def apply_match_mode_filter(items, search_text=None, tags=None, status=None, match_mode="and"):
-    """Apply match_mode filtering to a list of items"""
+    """Apply match_mode filtering to a list of items if we cant use SQL for it"""
     if not any([search_text, tags, status]):
         return items
     

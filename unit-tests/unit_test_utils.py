@@ -1,3 +1,5 @@
+# Shared utility functions for unit tests
+
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'app'))
@@ -44,6 +46,7 @@ def create_test_calendar_entry(user_id):
 
 def clean_tables():
     """Clean up all test tables"""
+    # Ensure database is set up
     setup.setup_database()
     cursor = get_cursor()
     cursor.execute(f"USE {MYSQL_DATABASE}")

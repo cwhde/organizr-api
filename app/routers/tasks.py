@@ -1,4 +1,4 @@
-# Tasks CRUD routes
+# Tasks route of the API
 
 import logging
 from fastapi import APIRouter, HTTPException, Header
@@ -119,7 +119,7 @@ async def query_tasks(
 
         results = []
 
-        # Non-recurring tasks via SQL
+        # Non-recurring tasks via SQL, seperate from recurring as they can be handled solely in SQL
         base_conds = ["user_id = %s", "(rrule IS NULL OR rrule = '')"]
         base_params = [requester_id]
         
@@ -159,6 +159,7 @@ async def query_tasks(
             rec_conds = ["user_id = %s", "(rrule IS NOT NULL AND rrule <> '')"]
             rec_params = [requester_id]
             
+            # If its and, these params have to match and they can already be queried, if its or, we have to do it manually as we cant check the rrule in sql
             if match_mode.lower() == "and":
                 rec_conds.extend(tt_conds)
                 rec_params.extend(tt_params)
@@ -169,6 +170,7 @@ async def query_tasks(
             rec_rows = cursor.fetchall()
             rec_tasks = []
             id_to_status = {}
+            # Turn the db rows into dicts
             for row in rec_rows:
                 task = {col: row[i] for i, col in enumerate(cols)}
                 if isinstance(task.get("tags"), str):
@@ -218,7 +220,7 @@ async def query_tasks(
                     filtered_occs = utils.apply_match_mode_filter(occ_items, search_text, tags, status, match_mode)
                     results.extend(filtered_occs)
         else:
-            # No time window - return base recurring rows
+            # No time window - return base recurring rows as we dont have to consider dates/rrules
             rec_conds = ["user_id = %s", "(rrule IS NOT NULL AND rrule <> '')"]
             rec_params = [requester_id]
             
@@ -400,7 +402,7 @@ async def delete_task(
     entry_id: int,
     api_key: str = Header(..., alias="X-API-Key"),
 ):
-    """Delete a task"""
+    """Delete a specific task"""
     utils.validate_entry_access(api_key, utils.ResourceType.TASK, entry_id)
 
     try:

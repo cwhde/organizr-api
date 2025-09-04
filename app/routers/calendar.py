@@ -1,4 +1,4 @@
-# Calendar CRUD routes
+# Calendar route of the API, similar in its logic to tasks
 
 import logging
 from fastapi import APIRouter, HTTPException, Header
@@ -154,7 +154,7 @@ async def query_events(
         
         results.extend(items)
 
-        # Recurring events
+        # Recurring events are more complex due to rrule expansion, cant handle in sql with other entries
         if has_time_window:
             # Get recurring events and expand
             rec_conds = ["user_id = %s", "(rrule IS NOT NULL AND rrule <> '')", "start_datetime <= %s"]

@@ -1,4 +1,4 @@
-# Note management routes
+# Notes route of the API
 
 import logging
 from fastapi import APIRouter, HTTPException, Header
@@ -58,6 +58,7 @@ def _build_get_notes_query(
     note_id: Optional[int] = None,
     match_mode: Optional[str] = "and",
 ):
+    """Build SQL query and parameters for getting notes with filters"""
     base_query = "SELECT id, user_id, title, content, tags, created_at, updated_at FROM notes WHERE user_id = %s"
     query_params = [target_user_id]
     
