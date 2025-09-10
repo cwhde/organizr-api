@@ -122,6 +122,8 @@ async def delete_app(
         return {"message": "App deleted successfully"}
 
     except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
         logger.error(f"Error deleting app: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 

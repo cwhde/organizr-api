@@ -18,7 +18,7 @@ db_cursor = db_connection.cursor()
 setup.setup_database()
 
 # Initialize FastAPI app
-app = FastAPI(title="Organizr-API", version="0.5.8")
+app = FastAPI(title="Organizr-API", version="0.5.9")
 
 # Include routers
 app.include_router(users.router, prefix="/users", tags=["users"])

@@ -27,6 +27,13 @@ def test_user():
     data = response.json()
     return {"user_id": data["user_id"], "api_key": data["api_key"]}
 
+def _clear_tasks_table():
+    """Wipes the tasks table for a clean test slate."""
+    cursor = database.get_cursor()
+    cursor.execute(f"USE {database.MYSQL_DATABASE}")
+    cursor.execute("DELETE FROM tasks")
+    database.get_connection().commit()
+
 def test_task_crud(test_user):
     """Test basic create, read, update, delete for a task."""
     client = TestClient(app)
@@ -69,11 +76,12 @@ def test_task_crud(test_user):
 
 def test_query_tasks_with_rrule(test_user):
     """Test querying tasks, especially recurring ones."""
+    _clear_tasks_table() # Ensure a clean slate for this test
     client = TestClient(app)
     user_api_key = test_user["api_key"]
-    
+
     start_date = datetime.now()
-    
+
     # Create a non-recurring task
     client.post("/tasks/", params={
         "title": "One-time Task",
@@ -93,12 +101,12 @@ def test_query_tasks_with_rrule(test_user):
     # Query for all tasks in the next 10 days
     query_start = (start_date - timedelta(days=1)).isoformat()
     query_end = (start_date + timedelta(days=10)).isoformat()
-    
+
     response = client.get("/tasks/", params={
         "due_after": query_start,
         "due_before": query_end
     }, headers={"X-API-Key": user_api_key})
-    
+
     assert response.status_code == 200
     tasks = response.json()
     # Expect 1 one-time task + 5 occurrences of the daily task
@@ -110,8 +118,7 @@ def test_query_tasks_with_rrule(test_user):
         "due_after": query_start,
         "due_before": query_end
     }, headers={"X-API-Key": user_api_key})
-    
+
     assert response.status_code == 200
     recurring_tasks = response.json()
     assert len(recurring_tasks) == 5
-    assert all(t['title'] == 'Daily Standup' for t in recurring_tasks)

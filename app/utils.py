@@ -322,8 +322,8 @@ def build_query_filters(search_text=None, tags=None, status=None, match_mode="an
     if tags:
         tag_conds = []
         for t in tags:
-            tag_conds.append("JSON_CONTAINS(tags, JSON_QUOTE(%s), '$')")
-            params.append(t)
+            tag_conds.append("JSON_CONTAINS(tags, CAST(%s AS JSON))")
+            params.append(json.dumps(t))
         joiner = " AND " if match_mode.lower() == "and" else " OR "
         conds.append(f"({joiner.join(tag_conds)})")
     

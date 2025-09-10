@@ -1,7 +1,7 @@
 # Calendar route of the API, similar in its logic to tasks
 
 import logging
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, Query
 from typing import Optional, List, Dict, Any
 import database
 import utils
@@ -19,7 +19,7 @@ async def create_event(
         end_time: Optional[str] = None,
         description: Optional[str] = None,
         rrule: Optional[str] = None,
-        tags: Optional[List[str]] = None,
+        tags: Optional[List[str]] = Query(None),
         for_user: Optional[str] = None, # Let admin create events for other users
         api_key: str = Header(..., alias="X-API-Key"),
 ):
@@ -41,8 +41,17 @@ async def create_event(
         cursor = database.get_cursor()
         cursor.execute(f"USE {database.MYSQL_DATABASE}")
 
-        # Generate new event with all given parameters, handle optional fields
-        tags_json = utils.list_to_json(tags) if tags else None
+        # Process tags, which may come as a list or a JSON string in a list
+        processed_tags = []
+        if tags:
+            if len(tags) == 1 and tags[0].startswith('[') and tags[0].endswith(']'):
+                try:
+                    processed_tags = json.loads(tags[0])
+                except json.JSONDecodeError:
+                    processed_tags = tags
+            else:
+                processed_tags = tags
+        tags_json = utils.list_to_json(processed_tags) if processed_tags else None
 
         # Use start_time for end_time if not provided
         end_time_actual = end_time_parsed if end_time_parsed else start_time_parsed
@@ -80,7 +89,7 @@ async def create_event(
             "start_datetime": start_time,
             "end_datetime": end_time,
             "rrule": rrule,
-            "tags": tags
+            "tags": processed_tags
         }
     except Exception as e:
         database.get_connection().rollback()
@@ -242,27 +251,28 @@ async def get_event(
         if not event_row:
             raise HTTPException(status_code=404, detail="Event not found")
 
-        # Convert database row to dictionary for robust access
+        # Convert database row to dictionary to prevent indexing errors
         columns = [desc[0] for desc in cursor.description]
-        event = dict(zip(columns, event_row))
-
+        event_dict = dict(zip(columns, event_row))
+        
         # Parse JSON tags field
-        tags_json = event.get("tags")
-        if tags_json:
+        tags_json = event_dict.get("tags")
+        if tags_json and isinstance(tags_json, str):
             try:
-                event["tags"] = json.loads(tags_json)
+                event_dict["tags"] = json.loads(tags_json)
             except (json.JSONDecodeError, TypeError):
-                event["tags"] = []
-        else:
-            event["tags"] = []
+                event_dict["tags"] = []
+        elif not isinstance(event_dict.get("tags"), list):
+             event_dict["tags"] = []
 
-        return event
+        return event_dict
 
     except Exception as e:
         if isinstance(e, HTTPException):
             raise e
         logger.error(f"Failed to retrieve calendar entry {entry_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to retrieve calendar entry {entry_id}: {str(e)}")
+    
 
 @router.put("/{event_id}", response_model=schemas.CalendarEvent)
 async def update_event(
@@ -272,12 +282,12 @@ async def update_event(
     end_time: Optional[str] = None,
     description: Optional[str] = None,
     rrule: Optional[str] = None,
-    tags: Optional[List[str]] = None,
+    tags: Optional[List[str]] = Query(None),
     api_key: str = Header(..., alias="X-API-Key"),
 ):
     """Update an existing calendar event"""
     # Validate user has access to this calendar entry
-    requester_id = utils.validate_entry_access(api_key, utils.ResourceType.CALENDAR, event_id)
+    utils.validate_entry_access(api_key, utils.ResourceType.CALENDAR, event_id)
 
     # Validate time formats if provided
     start_time_parsed = None
@@ -302,12 +312,16 @@ async def update_event(
         cursor.execute(f"USE {database.MYSQL_DATABASE}")
 
         # First get the current entry to know what fields to update
-        cursor.execute("SELECT * FROM calendar_entries WHERE id = %s", (event_id,))
-        current_event = cursor.fetchone()
+        cursor.execute("SELECT id, user_id, title, description, start_datetime, end_datetime, rrule, tags FROM calendar_entries WHERE id = %s", (event_id,))
+        current_event_row = cursor.fetchone()
 
-        if not current_event:
+        if not current_event_row:
             logger.error(f"Calendar entry {event_id} not found")
             raise HTTPException(status_code=404, detail="Calendar entry not found")
+        
+        columns = [desc[0] for desc in cursor.description]
+        current_event = dict(zip(columns, current_event_row))
+
 
         # Prepare update values
         update_fields = []
@@ -316,25 +330,28 @@ async def update_event(
         if title is not None:
             update_fields.append("title = %s")
             update_values.append(title)
-
         if start_time_parsed is not None:
             update_fields.append("start_datetime = %s")
             update_values.append(start_time_parsed)
-
         if end_time_parsed is not None:
             update_fields.append("end_datetime = %s")
             update_values.append(end_time_parsed)
-
         if description is not None:
             update_fields.append("description = %s")
             update_values.append(description)
-
         if rrule is not None:
             update_fields.append("rrule = %s")
             update_values.append(rrule)
-
         if tags is not None:
-            tags_json = utils.list_to_json(tags)
+            processed_tags = []
+            if len(tags) == 1 and tags[0].startswith('[') and tags[0].endswith(']'):
+                try:
+                    processed_tags = json.loads(tags[0])
+                except json.JSONDecodeError:
+                    processed_tags = tags
+            else:
+                processed_tags = tags
+            tags_json = utils.list_to_json(processed_tags)
             update_fields.append("tags = %s")
             update_values.append(tags_json)
 
@@ -349,24 +366,27 @@ async def update_event(
         database.get_connection().commit()
 
         # Get updated entry
-        cursor.execute("SELECT * FROM calendar_entries WHERE id = %s", (event_id,))
-        updated_event = cursor.fetchone()
+        cursor.execute("SELECT id, user_id, title, description, start_datetime, end_datetime, rrule, tags FROM calendar_entries WHERE id = %s", (event_id,))
+        updated_event_row = cursor.fetchone()
+        updated_event = dict(zip(columns, updated_event_row))
 
         logger.info(f"Updated calendar entry with ID {event_id}")
 
-        # Return the created event
-        return {
-            "id": updated_event["id"],
-            "user_id": updated_event["user_id"],
-            "title": updated_event["title"],
-            "description": updated_event["description"],
-            "start_datetime": updated_event["start_datetime"].isoformat(),
-            "end_datetime": updated_event["end_datetime"].isoformat() if updated_event["end_datetime"] else None,
-            "rrule": updated_event["rrule"],
-            "tags": json.loads(updated_event["tags"]) if updated_event["tags"] else []
-        }
+        # Parse tags for the final response
+        tags_json = updated_event.get("tags")
+        if tags_json and isinstance(tags_json, str):
+            try:
+                updated_event["tags"] = json.loads(tags_json)
+            except (json.JSONDecodeError, TypeError):
+                updated_event["tags"] = []
+        elif not isinstance(updated_event.get("tags"), list):
+             updated_event["tags"] = []
+
+        return updated_event
 
     except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
         database.get_connection().rollback()
         logger.error(f"Failed to update calendar entry: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to update calendar entry: {str(e)}")

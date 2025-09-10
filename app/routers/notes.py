@@ -1,11 +1,12 @@
 # Notes route of the API
 
 import logging
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, Query
 from typing import Optional, List
 import database
 import utils
 import schemas
+import json
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -76,8 +77,8 @@ def _build_get_notes_query(
     if tags:
         tag_conditions = []
         for tag in tags:
-            tag_conditions.append("JSON_CONTAINS(tags, JSON_QUOTE(%s), '$')")
-            query_params.append(tag)
+            tag_conditions.append("JSON_CONTAINS(tags, %s)")
+            query_params.append(json.dumps(tag))
         
         if tag_conditions:
             tag_joiner = " AND " if match_mode.lower() == "and" else " OR "
@@ -96,7 +97,7 @@ def _build_get_notes_query(
 async def get_notes(
     title: Optional[str] = None,
     content: Optional[str] = None,
-    tags: Optional[List[str]] = None,
+    tags: Optional[List[str]] = Query(None),
     note_id: Optional[int] = None,
     match_mode: Optional[str] = "and",
     for_user: Optional[str] = None,
@@ -182,9 +183,9 @@ async def update_note(
         logger.info(f"Updated note {note_id}")
         return updated_note
 
-    except HTTPException:
-        raise
     except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
         database.get_connection().rollback()
         logger.error(f"Failed to update note {note_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to update note {note_id}: {str(e)}")
@@ -212,9 +213,9 @@ async def delete_note(
         logger.info(f"Deleted note {note_id}")
         return {"message": "Note deleted successfully"}
 
-    except HTTPException:
-        raise
     except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
         database.get_connection().rollback()
         logger.error(f"Failed to delete note {note_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to delete note {note_id}: {str(e)}")

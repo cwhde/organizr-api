@@ -85,3 +85,24 @@ def manual_admin_key_override():
                        (admin_id, apiHash))
     get_connection().commit()
     return apiKey
+
+def clear_all_tables():
+    """
+    Truncates all user-data tables to ensure test isolation.
+    This should be called at the beginning of each test function that
+    interacts with the database to prevent state from leaking between tests.
+    """
+    cursor = database.get_cursor()
+    db_name = database.MYSQL_DATABASE
+    cursor.execute(f"USE {db_name}")
+    
+    # Temporarily disable foreign key checks to allow truncating in any order
+    cursor.execute("SET FOREIGN_KEY_CHECKS = 0;")
+    
+    tables = ["app_user_links", "apps", "calendar_entries", "tasks", "notes", "users"]
+    for table in tables:
+        cursor.execute(f"TRUNCATE TABLE {table}")
+        
+    # Re-enable foreign key checks
+    cursor.execute("SET FOREIGN_KEY_CHECKS = 1;")
+    database.get_connection().commit()

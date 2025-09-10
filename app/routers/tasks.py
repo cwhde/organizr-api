@@ -1,7 +1,7 @@
 # Tasks route of the API
 
 import logging
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, Query
 from typing import Optional, List, Dict, Any, Tuple
 import database
 import utils
@@ -19,7 +19,7 @@ async def create_task(
     status: Optional[schemas.TaskStatus] = schemas.TaskStatus.PENDING,
     due_date: Optional[str] = None,
     rrule: Optional[str] = None,
-    tags: Optional[List[str]] = None,
+    tags: Optional[List[str]] = Query(None),
     for_user: Optional[str] = None,
     api_key: str = Header(..., alias="X-API-Key"),
 ):
@@ -85,7 +85,7 @@ async def create_task(
 @router.get("/", response_model=List[schemas.Task])
 async def query_tasks(
     search_text: Optional[str] = None,
-    tags: Optional[List[str]] = None,
+    tags: Optional[List[str]] = Query(None),
     due_after: Optional[str] = None,
     due_before: Optional[str] = None,
     status: Optional[schemas.TaskStatus] = None,
@@ -96,7 +96,26 @@ async def query_tasks(
     """Query tasks by text, tags, status, and/or due date with configurable match mode"""
     requester_id = utils.validate_user_for_action(api_key, for_user)
 
+    # Local helper to ensure correct tag querying
+    def build_local_query_filters(search_text=None, tags=None, status=None):
+        conds, params = [], []
+        if search_text:
+            conds.append("(title LIKE %s OR description LIKE %s)")
+            params.extend([f"%{search_text}%", f"%{search_text}%"])
+        if status is not None:
+            conds.append("status = %s")
+            params.append(status.value if hasattr(status, 'value') else status)
+        if tags:
+            tag_conds = []
+            for t in tags:
+                tag_conds.append("JSON_CONTAINS(tags, %s)")
+                params.append(json.dumps(t))
+            conds.append(f"({' AND '.join(tag_conds)})")
+        return conds, params
+
     if not any([search_text, tags, due_after, due_before, status]):
+        # To get all tasks, the user should provide a wide time window.
+        # This prevents accidentally returning the entire task history.
         raise HTTPException(status_code=400, detail="At least one query filter must be provided.")
 
     # Parse time window
@@ -118,147 +137,79 @@ async def query_tasks(
         cursor.execute(f"USE {database.MYSQL_DATABASE}")
 
         results = []
+        tt_conds, tt_params = build_local_query_filters(search_text, tags, status)
 
-        # Non-recurring tasks via SQL, seperate from recurring as they can be handled solely in SQL
+        # Non-recurring tasks
         base_conds = ["user_id = %s", "(rrule IS NULL OR rrule = '')"]
         base_params = [requester_id]
-        
         if has_time_window:
             base_conds.append("due_date IS NOT NULL AND due_date <= %s AND due_date >= %s")
             base_params.extend([end_dt, start_dt])
-
-        # For AND mode, add all filters to SQL; for OR mode, query all and filter after
-        if match_mode.lower() == "and":
-            tt_conds, tt_params = utils.build_query_filters(search_text, tags, status)
-            base_conds.extend(tt_conds)
-            base_params.extend(tt_params)
+        
+        base_conds.extend(tt_conds)
+        base_params.extend(tt_params)
 
         sql = f"SELECT id, user_id, title, description, status, due_date, rrule, tags FROM tasks WHERE {' AND '.join(base_conds)}"
         cursor.execute(sql, tuple(base_params))
         
         rows = cursor.fetchall()
         cols = [d[0] for d in cursor.description]
-        items = []
-        for row in rows:
-            item = {col: row[i] for i, col in enumerate(cols)}
+        items = [{col: row[i] for i, col in enumerate(cols)} for row in rows]
+        for item in items:
             if isinstance(item.get("tags"), str):
-                try:
-                    item["tags"] = json.loads(item["tags"])
-                except (json.JSONDecodeError, TypeError):
-                    item["tags"] = []
-            items.append(item)
-        
-        if match_mode.lower() == "or":
-            items = utils.apply_match_mode_filter(items, search_text, tags, status, match_mode)
-        
+                try: item["tags"] = json.loads(item["tags"])
+                except (json.JSONDecodeError, TypeError): item["tags"] = []
         results.extend(items)
 
         # Recurring tasks
         if has_time_window:
-            # Get recurring tasks and expand
             rec_conds = ["user_id = %s", "(rrule IS NOT NULL AND rrule <> '')"]
             rec_params = [requester_id]
+            rec_conds.extend(tt_conds)
+            rec_params.extend(tt_params)
             
-            # If its and, these params have to match and they can already be queried, if its or, we have to do it manually as we cant check the rrule in sql
-            if match_mode.lower() == "and":
-                rec_conds.extend(tt_conds)
-                rec_params.extend(tt_params)
-
             sql_rec = f"SELECT id, user_id, title, description, status, due_date, rrule, tags FROM tasks WHERE {' AND '.join(rec_conds)}"
             cursor.execute(sql_rec, tuple(rec_params))
             
             rec_rows = cursor.fetchall()
-            rec_tasks = []
+            rec_tasks_for_expansion = []
             id_to_status = {}
-            # Turn the db rows into dicts
             for row in rec_rows:
                 task = {col: row[i] for i, col in enumerate(cols)}
                 if isinstance(task.get("tags"), str):
-                    try:
-                        task["tags"] = json.loads(task["tags"])
-                    except (json.JSONDecodeError, TypeError):
-                        task["tags"] = []
+                    try: task["tags"] = json.loads(task["tags"])
+                    except (json.JSONDecodeError, TypeError): task["tags"] = []
                 
                 if task.get("id") is not None:
-                    id_to_status[int(task.get("id"))] = task.get("status")
+                    id_to_status[int(task["id"])] = task.get("status")
                 
-                # Convert to event format for RRULE expansion
-                rec_tasks.append({
-                    "id": task.get("id"),
-                    "user_id": task.get("user_id"),
-                    "title": task.get("title"),
-                    "description": task.get("description"),
-                    "start_datetime": task.get("due_date"),
-                    "end_datetime": task.get("due_date"),
-                    "rrule": task.get("rrule"),
-                    "tags": task.get("tags") or [],
+                rec_tasks_for_expansion.append({
+                    "id": task.get("id"), "user_id": task.get("user_id"),
+                    "title": task.get("title"), "description": task.get("description"),
+                    "start_datetime": task.get("due_date"), "end_datetime": task.get("due_date"),
+                    "rrule": task.get("rrule"), "tags": task.get("tags") or [],
                 })
             
-            occurrences = utils.handle_rrule_query(rec_tasks, start_dt, end_dt)
+            occurrences = utils.handle_rrule_query(rec_tasks_for_expansion, start_dt, end_dt)
             
-            # Convert back to task format
             for occ in occurrences:
                 occ_id = occ.get("id")
                 occ_status = id_to_status.get(int(occ_id)) if occ_id is not None else schemas.TaskStatus.PENDING.value
                 results.append({
-                    "id": occ.get("id"),
-                    "user_id": occ.get("user_id"),
-                    "title": occ.get("title"),
-                    "description": occ.get("description"),
-                    "status": occ_status,
-                    "due_date": occ.get("start_datetime"),
-                    "rrule": occ.get("rrule"),
-                    "tags": occ.get("tags") or [],
+                    "id": occ_id, "user_id": occ.get("user_id"),
+                    "title": occ.get("title"), "description": occ.get("description"),
+                    "status": occ_status, "due_date": occ.get("start_datetime"),
+                    "rrule": occ.get("rrule"), "tags": occ.get("tags") or [],
                 })
-            
-            if match_mode.lower() == "or":
-                # Filter last len(occurrences) items
-                occ_count = len(occurrences)
-                if occ_count > 0:
-                    occ_items = results[-occ_count:]
-                    results = results[:-occ_count]
-                    filtered_occs = utils.apply_match_mode_filter(occ_items, search_text, tags, status, match_mode)
-                    results.extend(filtered_occs)
-        else:
-            # No time window - return base recurring rows as we dont have to consider dates/rrules
-            rec_conds = ["user_id = %s", "(rrule IS NOT NULL AND rrule <> '')"]
-            rec_params = [requester_id]
-            
-            if match_mode.lower() == "and":
-                rec_conds.extend(tt_conds)
-                rec_params.extend(tt_params)
 
-            sql_rec = f"SELECT id, user_id, title, description, status, due_date, rrule, tags FROM tasks WHERE {' AND '.join(rec_conds)}"
-            cursor.execute(sql_rec, tuple(rec_params))
-            
-            rec_rows = cursor.fetchall()
-            rec_items = []
-            for row in rec_rows:
-                item = {col: row[i] for i, col in enumerate(cols)}
-                if isinstance(item.get("tags"), str):
-                    try:
-                        item["tags"] = json.loads(item["tags"])
-                    except (json.JSONDecodeError, TypeError):
-                        item["tags"] = []
-                rec_items.append(item)
-            
-            if match_mode.lower() == "or":
-                rec_items = utils.apply_match_mode_filter(rec_items, search_text, tags, status, match_mode)
-            
-            results.extend(rec_items)
-
-        # Ensure status defaults and sort
-        for item in results:
-            if not item.get("status"):
-                item["status"] = schemas.TaskStatus.PENDING.value
-
+        # Final sort and return
         results.sort(key=lambda x: (x.get("due_date") or datetime.datetime.min, x.get("id") or 0))
         logger.info(f"Found {len(results)} tasks for user {requester_id}")
         return results
 
-    except HTTPException:
-        raise
     except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
         logger.error(f"Failed to query tasks: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to query tasks: {str(e)}")
 
