@@ -76,8 +76,8 @@ def _build_get_notes_query(
     if tags:
         tag_conditions = []
         for tag in tags:
-            tag_conditions.append("JSON_CONTAINS(tags, %s)")
-            query_params.append(f'"{tag}"')
+            tag_conditions.append("JSON_CONTAINS(tags, JSON_QUOTE(%s), '$')")
+            query_params.append(tag)
         
         if tag_conditions:
             tag_joiner = " AND " if match_mode.lower() == "and" else " OR "

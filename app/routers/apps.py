@@ -93,6 +93,8 @@ async def update_app(
         return {"id": updated_app[0], "name": updated_app[1], "created_at": updated_app[2]}
 
     except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
         logger.error(f"Error updating app: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -307,5 +309,7 @@ async def translate_id(
             return {"external_id": result[0]}
 
     except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
         logger.error(f"Error translating ID: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")

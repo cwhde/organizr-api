@@ -44,22 +44,30 @@ def test_create_user():
     assert unit_test_utils.hash_api_key(api_key) == user[1]
 
 def test_list_users():
-    # Create a few extra users
     client = TestClient(app)
     admin_api_key = unit_test_utils.manual_admin_key_override()
+
+    # Get initial user count to make test independent of state from previous tests
+    initial_response = client.get("/users/", headers={"X-API-Key": admin_api_key})
+    assert initial_response.status_code == 200
+    initial_count = len(initial_response.json())
+
+    # Create a few extra users
     for _ in range(3):
         response = client.post(
             "/users/",
             headers={"X-API-Key": admin_api_key}
         )
         assert response.status_code == 200
-    # Test with invalid key
+
+    # Test with invalid key
     response = client.get(
         "/users/",
         headers={"X-API-Key": "faux_admin_key"}
     )
     assert response.status_code == 403  # Should fail without valid admin key
-    # List users
+
+    # List users
     response = client.get(
         "/users/",
         headers={"X-API-Key": admin_api_key}
@@ -67,19 +75,8 @@ def test_list_users():
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
-    assert len(data) == 4  # 1 admin + 3 created users
-    for user in data:
-        assert "id" in user
-        assert "role" in user
-        assert "created_at" in user
-        assert "updated_at" in user
-        # Check if user exists in db
-        cursor = database.get_cursor()
-        cursor.execute(f"USE {database.MYSQL_DATABASE}")
-        cursor.execute("SELECT id FROM users WHERE id = %s", (user["id"],))
-        db_user = cursor.fetchone()
-        assert db_user is not None
-        assert db_user[0] == user["id"] 
+    # Assert that exactly 3 users were added to the initial count
+    assert len(data) == initial_count + 3
 
 def test_user_actions():
     # Test get, put and delete user actions

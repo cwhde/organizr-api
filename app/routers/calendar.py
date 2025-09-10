@@ -236,16 +236,33 @@ async def get_event(
         cursor.execute(f"USE {database.MYSQL_DATABASE}")
 
         # Get the event from the database
-        cursor.execute("SELECT * FROM calendar_entries WHERE id = %s", (entry_id,))
-        event = cursor.fetchone()
+        cursor.execute("SELECT id, user_id, title, description, start_datetime, end_datetime, rrule, tags FROM calendar_entries WHERE id = %s", (entry_id,))
+        event_row = cursor.fetchone()
 
-        if not event:
+        if not event_row:
             raise HTTPException(status_code=404, detail="Event not found")
 
+        # Convert database row to dictionary for robust access
+        columns = [desc[0] for desc in cursor.description]
+        event = dict(zip(columns, event_row))
+
+        # Parse JSON tags field
+        tags_json = event.get("tags")
+        if tags_json:
+            try:
+                event["tags"] = json.loads(tags_json)
+            except (json.JSONDecodeError, TypeError):
+                event["tags"] = []
+        else:
+            event["tags"] = []
+
+        return event
+
     except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
         logger.error(f"Failed to retrieve calendar entry {entry_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to retrieve calendar entry {entry_id}: {str(e)}")
-
 
 @router.put("/{event_id}", response_model=schemas.CalendarEvent)
 async def update_event(
@@ -452,24 +469,45 @@ async def delete_tag_from_event(
         cursor = database.get_cursor()
         cursor.execute(f"USE {database.MYSQL_DATABASE}")
 
-        # Check if the entry exists
-        cursor.execute("SELECT * FROM calendar_entries WHERE id = %s", (entry_id,))
-        event = cursor.fetchone()
+        # Check if the entry exists and get current tags
+        cursor.execute("SELECT tags FROM calendar_entries WHERE id = %s", (entry_id,))
+        result = cursor.fetchone()
 
-        if not event:
+        if not result:
             logger.error(f"Calendar entry {entry_id} not found for tag deletion")
             raise HTTPException(status_code=404, detail="Calendar entry not found")
 
-        # Delete the tag from the event
-        delete_query = "UPDATE calendar_entries SET tags = JSON_REMOVE(tags, '$[0]') WHERE id = %s"
-        cursor.execute(delete_query, (entry_id,))
+        # Parse current tags
+        current_tags_json = result[0]
+        current_tags = []
+        if current_tags_json:
+            try:
+                current_tags = json.loads(current_tags_json)
+                if not isinstance(current_tags, list):
+                    current_tags = [] # Ensure it's a list
+            except (json.JSONDecodeError, TypeError):
+                current_tags = []
+
+        # Remove the specified tag if it exists
+        if tag in current_tags:
+            current_tags.remove(tag)
+        else:
+            logger.warning(f"Tag '{tag}' not found in calendar entry {entry_id}")
+            raise HTTPException(status_code=404, detail=f"Tag '{tag}' not found in this calendar entry")
+
+        # Convert back to JSON and update the database
+        updated_tags_json = utils.list_to_json(current_tags) if current_tags else None
+        update_query = "UPDATE calendar_entries SET tags = %s WHERE id = %s"
+        cursor.execute(update_query, (updated_tags_json, entry_id))
 
         # Commit the transaction
         database.get_connection().commit()
 
-        logger.info(f"Deleted tag for calendar entry with ID {entry_id}")
+        logger.info(f"Deleted tag '{tag}' from calendar entry with ID {entry_id}")
         return {"message": f"Tag '{tag}' deleted successfully from calendar entry with ID {entry_id}"}
     except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
         # Rollback in case of error
         database.get_connection().rollback()
         logger.error(f"Failed to delete tag for calendar entry: {str(e)}")
