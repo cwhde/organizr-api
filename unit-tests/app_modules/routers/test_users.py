@@ -181,6 +181,13 @@ def test_reroll_api_key():
     client = TestClient(app)
     admin_api_key = unit_test_utils.manual_admin_key_override()
     
+    # Get admin user ID
+    cursor = database.get_cursor()
+    cursor.execute(f"USE {database.MYSQL_DATABASE}")
+    cursor.execute("SELECT id FROM users WHERE role = 'admin'")
+    admin_user = cursor.fetchone()
+    admin_id = admin_user[0] if admin_user else None
+    
     # Create a user
     response = client.post(
         "/users/",
@@ -230,15 +237,15 @@ def test_reroll_api_key():
     
     # Test admin trying to reroll their own API key (should fail)
     response = client.post(
-        f"/users/admin/reroll",
+        f"/users/{admin_id}/reroll",
         headers={"X-API-Key": admin_api_key},
-        params={"for_user": "admin"}
+        params={"for_user": admin_id}
     )
     assert response.status_code == 403  # Admin cannot reroll their own API key
     
     # Test admin trying to reroll their own API key without for_user param (should fail)
     response = client.post(
-        f"/users/admin/reroll",
+        f"/users/{admin_id}/reroll",
         headers={"X-API-Key": admin_api_key}
     )
     assert response.status_code == 403  # Admin cannot reroll their own API key

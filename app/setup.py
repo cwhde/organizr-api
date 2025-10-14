@@ -33,10 +33,11 @@ def create_db_and_scheme():
     # Create database and select it
     db_cursor.execute(f"CREATE DATABASE IF NOT EXISTS {database.MYSQL_DATABASE};")
     db_cursor.execute(f"USE {database.MYSQL_DATABASE};")
-    # Create tables
+    
+    # Create tables individually to avoid multi-statement issues
+    # User table
     db_cursor.execute(
         """
-        -- User table
         CREATE TABLE IF NOT EXISTS users (
             id                   CHAR(8)      PRIMARY KEY,
             api_key_hash         CHAR(64)     NOT NULL,
@@ -44,8 +45,13 @@ def create_db_and_scheme():
             role                 ENUM('user','admin') NOT NULL DEFAULT 'user',
             created_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-        );
-        -- Calendar entries
+        )
+        """
+    )
+    
+    # Calendar entries
+    db_cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS calendar_entries (
             id                   INT          AUTO_INCREMENT PRIMARY KEY,
             user_id              CHAR(8)      NOT NULL,
@@ -58,8 +64,13 @@ def create_db_and_scheme():
             created_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-        -- Tasks
+        )
+        """
+    )
+    
+    # Tasks
+    db_cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS tasks (
             id                   INT          AUTO_INCREMENT PRIMARY KEY,
             user_id              CHAR(8)      NOT NULL,
@@ -72,8 +83,13 @@ def create_db_and_scheme():
             created_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-        -- Notes
+        )
+        """
+    )
+    
+    # Notes
+    db_cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS notes (
             id                   INT          AUTO_INCREMENT PRIMARY KEY,
             user_id              CHAR(8)      NOT NULL,
@@ -83,14 +99,24 @@ def create_db_and_scheme():
             created_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-        -- Apps
+        )
+        """
+    )
+    
+    # Apps
+    db_cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS apps (
             id INT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(255) UNIQUE NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        -- App User Links
+        )
+        """
+    )
+    
+    # App User Links
+    db_cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS app_user_links (
             id INT AUTO_INCREMENT PRIMARY KEY,
             app_id INT,
@@ -101,7 +127,7 @@ def create_db_and_scheme():
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
             UNIQUE (app_id, external_id),
             UNIQUE (app_id, user_id)
-        );
+        )
         """
     )
 
@@ -110,6 +136,8 @@ def create_db_and_scheme():
 
 def create_admin_user():
     """Create the initial admin user and log credentials."""
+    # Ensure we have a fresh connection
+    database.close_connection()
     db_cursor = database.get_cursor()
 
     # Generate admin credentials

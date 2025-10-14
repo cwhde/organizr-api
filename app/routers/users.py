@@ -163,6 +163,13 @@ async def reroll_api_key(
     if requester_role == 'admin' and user_id == requester_id:
         raise HTTPException(status_code=403, detail="Admin cannot reroll their own API key")
     
+    # Check if user exists first
+    cursor = database.get_cursor()
+    cursor.execute(f"USE {database.MYSQL_DATABASE}")
+    cursor.execute("SELECT id FROM users WHERE id = %s", (user_id,))
+    if not cursor.fetchone():
+        raise HTTPException(status_code=404, detail="User not found")
+    
     # Use the for_user logic as specified
     target_user_id = utils.validate_user_for_action(api_key, for_user)
     
