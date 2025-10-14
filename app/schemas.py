@@ -28,6 +28,12 @@ class UserCreateResponse(BaseModel):
     message: str
 
 
+class ApiKeyRerollResponse(BaseModel):
+    user_id: str
+    new_api_key: str
+    message: str
+
+
 class CalendarEvent(BaseModel):
     id: int
     user_id: str

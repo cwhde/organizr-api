@@ -175,3 +175,101 @@ def test_user_actions():
     cursor.execute("SELECT id FROM users WHERE id = %s", (user_id,))
     db_user = cursor.fetchone()
     assert db_user is None
+
+def test_reroll_api_key():
+    # Test API key reroll functionality
+    client = TestClient(app)
+    admin_api_key = unit_test_utils.manual_admin_key_override()
+    
+    # Create a user
+    response = client.post(
+        "/users/",
+        headers={"X-API-Key": admin_api_key}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    user_id = data.get("user_id")
+    original_api_key = data.get("api_key")
+    
+    # Test user rerolling their own API key
+    response = client.post(
+        f"/users/{user_id}/reroll",
+        headers={"X-API-Key": original_api_key}
+    )
+    assert response.status_code == 200
+    reroll_data = response.json()
+    assert reroll_data["user_id"] == user_id
+    assert reroll_data["new_api_key"] != original_api_key
+    assert reroll_data["message"] == "API key rerolled successfully"
+    
+    # Verify the new API key works
+    new_api_key = reroll_data["new_api_key"]
+    response = client.get(
+        f"/users/{user_id}",
+        headers={"X-API-Key": new_api_key}
+    )
+    assert response.status_code == 200
+    
+    # Verify the old API key no longer works
+    response = client.get(
+        f"/users/{user_id}",
+        headers={"X-API-Key": original_api_key}
+    )
+    assert response.status_code == 403
+    
+    # Test admin rerolling API key for another user
+    response = client.post(
+        f"/users/{user_id}/reroll",
+        headers={"X-API-Key": admin_api_key},
+        params={"for_user": user_id}
+    )
+    assert response.status_code == 200
+    admin_reroll_data = response.json()
+    assert admin_reroll_data["user_id"] == user_id
+    assert admin_reroll_data["new_api_key"] != new_api_key
+    
+    # Test admin trying to reroll their own API key (should fail)
+    response = client.post(
+        f"/users/admin/reroll",
+        headers={"X-API-Key": admin_api_key},
+        params={"for_user": "admin"}
+    )
+    assert response.status_code == 403  # Admin cannot reroll their own API key
+    
+    # Test admin trying to reroll their own API key without for_user param (should fail)
+    response = client.post(
+        f"/users/admin/reroll",
+        headers={"X-API-Key": admin_api_key}
+    )
+    assert response.status_code == 403  # Admin cannot reroll their own API key
+    
+    # Test user trying to reroll API key for another user (should fail)
+    # Create a second user
+    response = client.post(
+        "/users/",
+        headers={"X-API-Key": admin_api_key}
+    )
+    assert response.status_code == 200
+    second_user_id = response.json()["user_id"]
+    second_user_api_key = response.json()["api_key"]
+    
+    # Try to reroll first user's API key with second user's API key
+    response = client.post(
+        f"/users/{user_id}/reroll",
+        headers={"X-API-Key": second_user_api_key}
+    )
+    assert response.status_code == 403
+    
+    # Test with invalid API key
+    response = client.post(
+        f"/users/{user_id}/reroll",
+        headers={"X-API-Key": "invalid_key"}
+    )
+    assert response.status_code == 403
+    
+    # Test with non-existent user
+    response = client.post(
+        "/users/nonexistent_user/reroll",
+        headers={"X-API-Key": admin_api_key}
+    )
+    assert response.status_code == 404
