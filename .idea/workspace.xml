@@ -99,6 +99,7 @@
       <workItem from="1750829345570" duration="8480000" />
       <workItem from="1755155587510" duration="3909000" />
       <workItem from="1755498465999" duration="633000" />
+      <workItem from="1757572520232" duration="7024000" />
     </task>
     <task id="LOCAL-00005" summary="Add unit tests for FastAPI application and database module">
       <option name="closed" value="true" />
@@ -121,6 +122,17 @@
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="Refactor project structure by renaming and reorganizing application files" />

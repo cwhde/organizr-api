@@ -149,55 +149,27 @@ async def update_user(
 @router.post("/{user_id}/reroll", response_model=schemas.ApiKeyRerollResponse)
 async def reroll_api_key(
     user_id: str,
-    api_key: str = Header(..., alias="X-API-Key"),
-    for_user: Optional[str] = None
+    api_key: str = Header(..., alias="X-API-Key")
 ):
-    """Reroll API key for a user (admin can do it for any user except themselves, users can do it for themselves)"""
-    # Get requester info
-    requester_id, requester_role, _ = utils.validate_api_key(api_key)
-    
-    if not requester_id:
-        raise HTTPException(status_code=403, detail="Invalid API key")
-    
-    # Admin cannot reroll their own API key
+    """Reroll API key for a user (users can reroll their own; admins can reroll others but not their own)"""
+    requester_id, requester_role, has_permission = utils.validate_api_key(api_key, user_id)
+    if not requester_id or not has_permission:
+        raise HTTPException(status_code=403, detail="Access denied")
     if requester_role == 'admin' and user_id == requester_id:
         raise HTTPException(status_code=403, detail="Admin cannot reroll their own API key")
-    
-    # Check if user exists first
-    cursor = database.get_cursor()
-    cursor.execute(f"USE {database.MYSQL_DATABASE}")
-    cursor.execute("SELECT id FROM users WHERE id = %s", (user_id,))
-    if not cursor.fetchone():
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    # Use the for_user logic as specified
-    target_user_id = utils.validate_user_for_action(api_key, for_user)
-    
-    # If for_user is not set but api_key isn't admin, assume user of key
-    if for_user is None and requester_role != 'admin':
-        target_user_id = requester_id
-    
-    # Ensure the target_user_id matches the user_id from the path
-    if target_user_id != user_id:
-        raise HTTPException(status_code=403, detail="Access denied")
     
     try:
         cursor = database.get_cursor()
         cursor.execute(f"USE {database.MYSQL_DATABASE}")
         
-        # Check if user exists and get their role
-        cursor.execute("SELECT role FROM users WHERE id = %s", (user_id,))
-        result = cursor.fetchone()
-        if not result:
+        # Ensure target user exists
+        cursor.execute("SELECT id FROM users WHERE id = %s", (user_id,))
+        if not cursor.fetchone():
             raise HTTPException(status_code=404, detail="User not found")
         
-        user_role = result[0]
-        
-        # Generate new API key
+        # Generate and store new API key
         new_api_key = utils.generate_api_key()
         new_api_key_hash = utils.hash_api_key(new_api_key)
-        
-        # Update user's API key
         cursor.execute(
             "UPDATE users SET api_key_hash = %s WHERE id = %s",
             (new_api_key_hash, user_id)
@@ -205,7 +177,6 @@ async def reroll_api_key(
         database.get_connection().commit()
         
         logger.info(f"API key rerolled for user: {user_id}")
-        
         return {
             "user_id": user_id,
             "new_api_key": new_api_key,
